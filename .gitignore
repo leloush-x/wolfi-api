@@ -41,3 +41,4 @@ client/node_modules/.vite
 debug.ts
 debug.tsx
 debug*.ts
+ytjs-bench.mjs
