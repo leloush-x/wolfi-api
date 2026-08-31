@@ -49,6 +49,12 @@ export async function handleInfo(req: Request): Promise<Response> {
     if (addressUrl && addressUrl !== "localhost" && addressUrl !== "0.0.0.0") {
       streamUrl = `${addressUrl.replace(/\/$/, "")}/saudio/${videoId}`;
     }
+    // Absolute URL for <audio src> — the client reads track.proxyUrl directly,
+    // so this must always be present and fully-qualified (relative streamUrl
+    // above stays for backward compat with anything else reading it).
+    const host = req.headers.get("host") ?? "localhost:3000";
+    const proto = req.headers.get("x-forwarded-proto") ?? "http";
+    const proxyUrl = `${proto}://${host}/saudio/${videoId}`;
     // Warm first chunk even for cached meta — makes /saudio instant
     try {
       const { getCachedStream } = await import("../core/cache");
@@ -74,6 +80,7 @@ export async function handleInfo(req: Request): Promise<Response> {
       thumbnail: cached.thumbnail,
       ytLink: cached.ytLink,
       streamUrl,
+      proxyUrl,
       cached: true,
     });
   }
@@ -95,6 +102,9 @@ export async function handleInfo(req: Request): Promise<Response> {
   if (addressUrl && addressUrl !== "localhost" && addressUrl !== "0.0.0.0") {
     streamUrl = `${addressUrl.replace(/\/$/, "")}/saudio/${videoId}`;
   }
+  const host = req.headers.get("host") ?? "localhost:3000";
+  const proto = req.headers.get("x-forwarded-proto") ?? "http";
+  const proxyUrl = `${proto}://${host}/saudio/${videoId}`;
 
   return json({
     videoId: meta.videoId,
@@ -105,6 +115,7 @@ export async function handleInfo(req: Request): Promise<Response> {
     thumbnail: meta.thumbnail,
     ytLink: meta.ytLink,
     streamUrl,
+    proxyUrl,
     cached: false,
   });
 }
