@@ -14,6 +14,10 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
     return json({ error: "Invalid video ID" }, 400);
   }
 
+  const url = new URL(req.url);
+  const wantsJson = url.searchParams.has("json") || url.searchParams.has("url") || req.headers.get("Accept")?.includes("application/json");
+  const wantsRedirect = url.searchParams.has("redirect");
+
   const cached = getCachedStream(videoId);
 
   let streamUrl: string;
@@ -30,6 +34,20 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
     streamUrl = resolved.streamUrl;
     expiresAt = resolved.expiresAt;
     setCachedStream(videoId, streamUrl, expiresAt);
+  }
+
+  // Best audio stream URL only modes
+  if (wantsJson) {
+    return json({
+      videoId,
+      streamUrl,
+      expiresAt,
+      expiresIn: Math.max(0, expiresAt - Math.floor(Date.now() / 1000)),
+      cached: !!cached,
+    });
+  }
+  if (wantsRedirect) {
+    return Response.redirect(streamUrl, 302);
   }
 
   return proxyStream(streamUrl, req.headers);

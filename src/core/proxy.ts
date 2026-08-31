@@ -28,17 +28,48 @@ export async function proxyStream(
   }
 
   // Mask origin to prevent rate-limiting / IP mismatch blocks
-  upstreamHeaders.set("User-Agent", "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36");
+  // Use IOS UA to match resolver's IOS client (required for IOS-generated googlevideo URLs)
+  upstreamHeaders.set("User-Agent", "com.google.ios.youtube/20.45.31 (iPhone14,5; U; CPU iOS 17_5_1 like Mac OS X)");
   upstreamHeaders.set("Origin", "https://www.youtube.com");
   upstreamHeaders.set("Referer", "https://www.youtube.com/");
 
-  try {
-    const upstreamResponse = await fetch(upstreamUrl, {
-      method: "GET",
-      headers: upstreamHeaders,
-    });
+  async function fetchUpstream(extraHeaders: Headers): Promise<Response> {
+    return fetch(upstreamUrl, { method: "GET", headers: extraHeaders });
+  }
 
-    if (!upstreamResponse.ok) {
+  try {
+    let upstreamResponse = await fetchUpstream(upstreamHeaders);
+
+    // YouTube throttling: long videos require Range; also some Ranges get 403
+    // Retry on any 403 - try alternative Range values
+    if (upstreamResponse.status === 403) {
+      console.warn(`[proxy] Got 403 (Range:${range ?? "none"}) retrying with bytes=0-99999 for ${upstreamUrl.slice(0,80)}...`);
+      const retryHeaders = new Headers(upstreamHeaders);
+      // Always use a bounded range for retry (0-999 fails, 0-99999 works per test)
+      retryHeaders.set("Range", "bytes=0-99999");
+      const retry = await fetchUpstream(retryHeaders);
+      if (retry.ok || retry.status === 206) {
+        console.log(`[proxy] Retry success: ${retry.status} for Range 0-99999 (orig Range:${range ?? "none"})`);
+        upstreamResponse = retry;
+      } else {
+        console.warn(`[proxy] Retry 0-99999 failed: ${retry.status}, trying 0-999`);
+        const retry2Headers = new Headers(upstreamHeaders);
+        retry2Headers.set("Range", "bytes=0-999");
+        const retry2 = await fetchUpstream(retry2Headers);
+        if (retry2.ok || retry2.status === 206) {
+          console.log(`[proxy] Retry2 success: ${retry2.status}`);
+          upstreamResponse = retry2;
+        } else {
+          console.warn(`[proxy] Retry2 also failed: ${retry2.status} (orig Range:${range ?? "none"})`);
+        }
+      }
+    }
+
+    if (!upstreamResponse.ok && upstreamResponse.status !== 206) {
+      // Try to get more detail from upstream body for debugging
+      let detail = "";
+      try { detail = await upstreamResponse.text(); } catch {}
+      console.error(`[proxy] Upstream ${upstreamResponse.status} for ${upstreamUrl.slice(0,120)} detail=${detail.slice(0,200)}`);
       return new Response(
         JSON.stringify({ error: `Upstream returned ${upstreamResponse.status}` }),
         {

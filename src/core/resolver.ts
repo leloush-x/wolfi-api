@@ -8,8 +8,28 @@ import { parseExpiryFromUrl } from "./cache";
 import { readFileSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 
-// ─── MWEB Client Constants ────────────────────────────────────
+// ─── Client Constants (IOS primary - MWEB currently UNPLAYABLE) ───────
+const IOS_CLIENT = {
+  clientName: "IOS",
+  clientVersion: "20.45.31",
+  hl: "en",
+  gl: "US",
+  userAgent: "com.google.ios.youtube/20.45.31 (iPhone14,5; U; CPU iOS 17_5_1 like Mac OS X)",
+  deviceModel: "iPhone14,5",
+  osName: "iOS",
+  osVersion: "17.5.1.21F90",
+} as const;
 
+const ANDROID_CLIENT = {
+  clientName: "ANDROID",
+  clientVersion: "20.42.33",
+  hl: "en",
+  gl: "US",
+  userAgent: "com.google.android.youtube/20.42.33 (Linux; U; Android 13; Pixel 7) gzip",
+  androidSdkVersion: 33,
+} as const;
+
+// Fallback MWEB (kept for reference, currently blocked - shows UNPLAYABLE)
 const MWEB_CLIENT = {
   clientName: "MWEB",
   clientVersion: "2.20240726.01.00",
@@ -106,20 +126,42 @@ export function getLatencyStats() {
 
 // ─── Innertube Body Builder ────────────────────────────────────
 
-function buildRequestBody(videoId: string): object {
+function buildRequestBody(videoId: string, client: any = IOS_CLIENT): object {
+  const base: any = {
+    clientName: client.clientName,
+    clientVersion: client.clientVersion,
+    hl: client.hl,
+    gl: client.gl,
+  };
+  // IOS specific fields help bypass UNPLAYABLE
+  if (client === IOS_CLIENT) {
+    base.deviceModel = (client as any).deviceModel;
+    base.osName = (client as any).osName;
+    base.osVersion = (client as any).osVersion;
+  } else if (client === ANDROID_CLIENT) {
+    base.androidSdkVersion = (client as any).androidSdkVersion;
+  }
+  // userAgent is top-level inside context.client for some clients but also include
+  if (client.userAgent) base.userAgent = client.userAgent;
+
   return {
     videoId,
-    context: {
-      client: {
-        clientName: MWEB_CLIENT.clientName,
-        clientVersion: MWEB_CLIENT.clientVersion,
-        hl: MWEB_CLIENT.hl,
-        gl: MWEB_CLIENT.gl,
-        userAgent: MWEB_CLIENT.userAgent,
-      },
-    },
+    context: { client: base },
     contentCheckOk: true,
     racyCheckOk: true,
+  };
+}
+
+function getClientHeaders(client: any): Record<string,string> {
+  const map: Record<string,string> = { MWEB:"2", IOS:"5", ANDROID:"3" };
+  const clientNameId = map[client.clientName] ?? "5";
+  return {
+    "Content-Type": "application/json",
+    "User-Agent": client.userAgent,
+    "X-YouTube-Client-Name": clientNameId,
+    "X-YouTube-Client-Version": client.clientVersion,
+    Origin: "https://www.youtube.com",
+    Referer: "https://www.youtube.com/",
   };
 }
 
@@ -167,9 +209,10 @@ export class InnertubeResolver {
   private initialized = false;
   private lastPingTime = 0;
   private pingLatency = 0;
+  private activeClient: any = IOS_CLIENT;
 
   async init(): Promise<void> {
-    console.log("[resolver] Initializing MWEB Innertube session...");
+    console.log("[resolver] Initializing IOS Innertube session (MWEB blocked)...");
     this.initialized = true;
 
     // Warm up: ping YouTube to get baseline latency
@@ -180,7 +223,7 @@ export class InnertubeResolver {
       this.lastPingTime = Date.now();
     } catch { }
 
-    console.log("[resolver] Session ready.");
+    console.log(`[resolver] Session ready. Primary client: ${this.activeClient.clientName} ${this.activeClient.clientVersion}`);
   }
 
   async ping(): Promise<{ latencyMs: number; reachable: boolean }> {
@@ -195,51 +238,55 @@ export class InnertubeResolver {
     }
   }
 
-  async fetchPlayer(videoId: string): Promise<InnerTubePlayerResponse | null> {
-    if (!this.initialized) throw new Error("Resolver not initialized.");
-
+  private async fetchWithClient(videoId: string, client: any): Promise<InnerTubePlayerResponse | null> {
     const cookies = loadCookies();
-    const body = buildRequestBody(videoId);
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "User-Agent": MWEB_CLIENT.userAgent,
-      "X-YouTube-Client-Name": "2",
-      "X-YouTube-Client-Version": MWEB_CLIENT.clientVersion,
-      Origin: "https://www.youtube.com",
-      Referer: "https://www.youtube.com/",
-    };
+    const body = buildRequestBody(videoId, client);
+    const headers = getClientHeaders(client);
     if (cookies) headers["Cookie"] = cookies;
 
     const start = performance.now();
-
     try {
       const url = `${INNERTUBE_URL}?key=${INNERTUBE_KEY}&prettyPrint=false`;
       const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-
       const latencyMs = Math.round(performance.now() - start);
       latencyHistory.push({ timestamp: Date.now(), latencyMs, videoId });
       if (latencyHistory.length > 200) latencyHistory.shift();
-
       this.pingLatency = latencyMs;
       this.lastPingTime = Date.now();
 
       if (!response.ok) {
-        console.error(`[resolver] HTTP ${response.status} for videoId=${videoId}`);
+        console.error(`[resolver] [${client.clientName}] HTTP ${response.status} for videoId=${videoId}`);
         return null;
       }
-
       const data = (await response.json()) as InnerTubePlayerResponse;
       const status = data.playabilityStatus?.status;
       if (status && status !== "OK") {
-        console.warn(`[resolver] Playability: ${status} - ${data.playabilityStatus?.reason ?? "?"}`);
+        console.warn(`[resolver] [${client.clientName}] Playability: ${status} - ${data.playabilityStatus?.reason ?? "?"} for ${videoId}`);
         return null;
       }
+      // success - remember active client
+      this.activeClient = client;
       return data;
     } catch (err) {
-      console.error(`[resolver] Error for videoId=${videoId}:`, err);
+      console.error(`[resolver] [${client.clientName}] Error for videoId=${videoId}:`, err);
       return null;
     }
+  }
+
+  async fetchPlayer(videoId: string): Promise<InnerTubePlayerResponse | null> {
+    if (!this.initialized) throw new Error("Resolver not initialized.");
+
+    // Primary IOS -> fallback ANDROID -> last resort MWEB (currently blocked)
+    const clients = [IOS_CLIENT, ANDROID_CLIENT, MWEB_CLIENT];
+    for (const client of clients) {
+      const data = await this.fetchWithClient(videoId, client);
+      if (data) {
+        if (client !== IOS_CLIENT) console.log(`[resolver] Fallback success with ${client.clientName} for ${videoId}`);
+        return data;
+      }
+    }
+    console.error(`[resolver] All clients failed for videoId=${videoId}`);
+    return null;
   }
 
   async resolveTrack(videoId: string): Promise<{ meta: TrackInfo; audio: ResolvedAudio } | null> {
@@ -263,13 +310,16 @@ export class InnertubeResolver {
   getSessionInfo() {
     return {
       ready: this.initialized,
-      client: "MWEB",
+      client: this.activeClient?.clientName ?? "IOS",
+      clientVersion: this.activeClient?.clientVersion ?? IOS_CLIENT.clientVersion,
       lastPing: this.lastPingTime ? new Date(this.lastPingTime).toISOString() : null,
       latencyMs: this.pingLatency,
       cookieStatus: isCookieFileValid(),
       cookieInfo: getCookieInfo(),
     };
   }
+
+  getActiveClient() { return this.activeClient; }
 }
 
 export const resolver = new InnertubeResolver();
