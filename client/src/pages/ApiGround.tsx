@@ -274,7 +274,7 @@ export default function ApiGround() {
                 </div>
                 <div className="detail-item">
                   <div className="detail-label"><Radio size={12} /> Format</div>
-                  <div className="detail-value">WebM Audio</div>
+                  <div className="detail-value">MP4 Audio (AAC)</div>
                 </div>
                 <div className="detail-item">
                   <div className="detail-label"><ExternalLink size={12} /> Stream</div>
