@@ -2,10 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/gif" href="/favicon.gif" />
+    <link rel="icon" id="favicon" type="image/png" href="/frames/01.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#0a0a0f" />
     <title>Wolfie · Audio Proxy</title>
+    <script>
+      (function() {
+        var frame = 0;
+        var total = 36;
+        var fps = 8;
+        var link = document.getElementById('favicon');
+        var frames = [];
+        for (var i = 1; i <= total; i++) {
+          frames.push('/frames/' + String(i).padStart(2, '0') + '.png');
+        }
+        // Preload
+        frames.forEach(function(src) {
+          var img = new Image();
+          img.src = src;
+        });
+        setInterval(function() {
+          frame = (frame + 1) % total;
+          link.href = frames[frame];
+        }, 1000 / fps);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
