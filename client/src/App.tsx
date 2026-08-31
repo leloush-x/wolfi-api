@@ -3,6 +3,7 @@ import { LayoutDashboard, Music, Settings } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import ApiGround from './pages/ApiGround';
 import Admin from './pages/Admin';
+import StarCanvas from './components/StarCanvas';
 
 const TABS = [
   { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
@@ -17,6 +18,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <StarCanvas />
       <header className="app-header">
         <div className="brand">
           <div className="brand-icon brand-icon-video">

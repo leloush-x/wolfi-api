@@ -78,7 +78,7 @@ a:hover { color: var(--accent-hover); }
 }
 
 /* ─── App Layout ──────────────────────────────────────── */
-.app { max-width: 1120px; margin: 0 auto; padding: 24px 20px; }
+.app { max-width: 1120px; margin: 0 auto; padding: 24px 20px; position: relative; z-index: 1; }
 
 .app-header {
   display: flex;
