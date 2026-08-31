@@ -1,6 +1,7 @@
 /**
  * saudio.ts - Handler for GET /saudio/:videoId
- * Updated: Request counter.
+ * Updated: Request counter. v2: pass videoId through to proxyStream
+ * so prefetch/range caching in proxy.ts actually key-matches.
  */
 
 import { getCachedStream, setCachedStream, deleteCachedStream, incrementSaudioRequests } from "../core/cache";
@@ -64,7 +65,7 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
   }
 
   // HEAD support + instant prefetch
-  let res = await proxyStream(streamUrl, req.headers, req.method);
+  let res = await proxyStream(streamUrl, req.headers, req.method, videoId);
 
   // If upstream 403 (expire/sig), refresh cache once and retry
   if (res.status === 502) {
@@ -78,7 +79,7 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
           setCachedStream(videoId, fresh.streamUrl, fresh.expiresAt);
           // re-prefetch fresh
           try { prefetchStream(fresh.streamUrl, videoId); } catch {}
-          return proxyStream(fresh.streamUrl, req.headers, req.method);
+          return proxyStream(fresh.streamUrl, req.headers, req.method, videoId);
         }
       }
     } catch {}
