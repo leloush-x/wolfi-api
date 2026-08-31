@@ -61,7 +61,15 @@ const WINDOW_CHUNK = 4 * 1024 * 1024;   // rolling window during playback (~ a f
 const MAX_CLIENT_SPAN = 8 * 1024 * 1024; // hard cap on any client-specified range size
 
 // ─── Prefetch cache (warms the first chunk while /info responds) ──
-const prefetched = new Map<string, { ts: number; body: ReadableStream | null }>();
+interface PrefetchEntry {
+  ts: number;
+  body: ReadableStream | null;
+  status: number;
+  contentType: string | null;
+  contentLength: string | null;
+  contentRange: string | null;
+}
+const prefetched = new Map<string, PrefetchEntry>();
 const PREFETCH_TTL = 10_000;
 
 // ─── Short-lived exact-range cache ─────────────────────────────
@@ -102,17 +110,29 @@ export function prefetchStream(url: string, videoId: string): void {
   if (vis) h["X-Goog-Visitor-Id"] = vis;
   fetch(url, { headers: h, signal: AbortSignal.timeout(8000) })
     .then((r) => {
-      if (r.ok || r.status === 206) prefetched.set(key, { ts: Date.now(), body: r.body });
+      if (r.ok || r.status === 206) {
+        // Capture the real headers from googlevideo instead of guessing —
+        // adaptive "best" audio is frequently audio/webm (Opus), not mp4/AAC,
+        // and a wrong Content-Type here makes <audio> refuse to decode it.
+        prefetched.set(key, {
+          ts: Date.now(),
+          body: r.body,
+          status: r.status,
+          contentType: r.headers.get("content-type"),
+          contentLength: r.headers.get("content-length"),
+          contentRange: r.headers.get("content-range"),
+        });
+      }
     })
     .catch(() => {});
 }
 
-function consumePrefetch(key: string): ReadableStream | null {
+function consumePrefetch(key: string): PrefetchEntry | null {
   const e = prefetched.get(key);
   if (!e) return null;
   prefetched.delete(key);
   if (Date.now() - e.ts > PREFETCH_TTL) return null;
-  return e.body;
+  return e;
 }
 
 export function clearPrefetch(): number {
@@ -162,12 +182,16 @@ export async function proxyStream(
 
   // HEAD — instant, no body, warm prefetch
   if (method === "HEAD") {
+    // Reuse a real content-type from an existing prefetch entry if we have
+    // one; otherwise omit the header rather than assert a guess that's
+    // frequently wrong for adaptive audio (mp4 vs webm).
+    const existing = prefetched.get(cacheKey);
     const h = new Headers({
       "Accept-Ranges": "bytes",
-      "Content-Type": "audio/mp4",
       "Cache-Control": "public, max-age=86400",
       "Access-Control-Allow-Origin": "*",
     });
+    if (existing?.contentType) h.set("Content-Type", existing.contentType);
     if (!prefetched.get(cacheKey)) {
       const cookies = loadCookies();
       const hh: Record<string, string> = { Range: "bytes=0-0", "User-Agent": YT_AGENT };
@@ -189,14 +213,19 @@ export async function proxyStream(
     if (pre) {
       const h = new Headers({
         "Accept-Ranges": "bytes",
-        "Content-Type": "audio/mp4",
+        "Content-Type": pre.contentType || "audio/webm",
         "Cache-Control": "public, max-age=86400",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         "Access-Control-Allow-Headers": "Range",
         "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
       });
-      return new Response(pre, { status: 200, headers: h });
+      // Forward the real Content-Length/Content-Range so the browser knows
+      // this is only a slice of a larger file (and its true total size) —
+      // without these it assumes the ~512KB chunk IS the entire track.
+      if (pre.contentLength) h.set("Content-Length", pre.contentLength);
+      if (pre.contentRange) h.set("Content-Range", pre.contentRange);
+      return new Response(pre.body, { status: pre.status, headers: h });
     }
   }
 
