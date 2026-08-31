@@ -36,14 +36,21 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
     setCachedStream(videoId, streamUrl, expiresAt);
   }
 
+  // Instant proxy URL (always works, single RTT, handles Range)
+  const host = req.headers.get("host") ?? "localhost:3000";
+  const proto = req.headers.get("x-forwarded-proto") ?? "http";
+  const proxyUrl = `${proto}://${host}/saudio/${videoId}`;
+
   // Best audio stream URL only modes
   if (wantsJson) {
     return json({
       videoId,
-      streamUrl,
+      streamUrl, // direct googlevideo (needs Range: bytes=0-99999 for long videos, 403 otherwise)
+      proxyUrl, // instant proxy (always 206, no 403, use this for <audio src>)
       expiresAt,
       expiresIn: Math.max(0, expiresAt - Math.floor(Date.now() / 1000)),
       cached: !!cached,
+      note: "Use proxyUrl for instant <audio> playback; streamUrl needs Range header for long videos",
     });
   }
   if (wantsRedirect) {
