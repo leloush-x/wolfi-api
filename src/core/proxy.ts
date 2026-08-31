@@ -23,8 +23,9 @@ export function prefetchStream(url: string, vid: string = vidKeyFromUrl(url)): v
   const key = vid || vidKeyFromUrl(url);
   const existing = prefetched.get(key);
   if (existing && Date.now() - existing.ts < PREFETCH_TTL) return;
+  // Prefetch 1MB for instant full load + seek
   fetch(url, {
-    headers: { Range: "bytes=0-131072", "User-Agent": YT_AGENT },
+    headers: { Range: "bytes=0-1048576", "User-Agent": YT_AGENT },
     signal: AbortSignal.timeout(8000),
   })
     .then((r) => {
@@ -62,9 +63,11 @@ export async function proxyStream(
   method: string = "GET",
 ): Promise<Response> {
   const vidKey = vidKeyFromUrl(upstreamUrl);
-  const clientRange = headers.get("Range");
-  // Proactive Range for instant load (long videos 403 without it)
-  const range = clientRange ?? "bytes=0-99999";
+  let clientRange = headers.get("Range") ?? headers.get("range");
+  // Normalize: bytes=0- (full) → 1MB chunk for instant load + seek (avoids 403 on long videos)
+  if (clientRange === "bytes=0-") clientRange = "bytes=0-1048576";
+  // Proactive 1MB for instant full load (was 100KB, too small for 45min audio)
+  const range = clientRange ?? "bytes=0-1048576";
 
   // HEAD — instant, warm prefetch for next GET
   if (method === "HEAD") {
@@ -121,11 +124,11 @@ export async function proxyStream(
       signal: AbortSignal.timeout(15000),
     } as any);
 
-    // Single retry on 403 — try alternative Range (some videos need 0-131072 vs 0-99999)
+    // Single retry on 403 — try alternative Range (long videos need bounded, not open)
     if (!upstream.ok && upstream.status === 403) {
       const retryHeaders = new Headers(upstreamHeaders);
-      // If we sent 0-99999, try 0-131072 (prefetch size) or 0-999
-      const altRange = range === "bytes=0-99999" ? "bytes=0-131072" : "bytes=0-99999";
+      // If 1MB fails, try 128KB or 100KB
+      const altRange = range === "bytes=0-1048576" ? "bytes=0-131072" : "bytes=0-1048576";
       retryHeaders.set("Range", altRange);
       try {
         const retry = await fetch(upstreamUrl, {
