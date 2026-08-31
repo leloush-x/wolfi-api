@@ -12,7 +12,42 @@ export interface ProxyOptions {
   contentType: string;
 }
 
-const YT_AGENT = "com.google.ios.youtube/20.45.31 (iPhone14,5; U; CPU iOS 17_5_1 like Mac OS X)";
+// MWEB only — must match resolver's MWEB UA and send cookies
+const YT_AGENT = "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { createHash } from "crypto";
+const COOKIE_PATH = join(import.meta.dir, "../../cookies.txt");
+function loadCookies(): string {
+  try {
+    const c = readFileSync(COOKIE_PATH, "utf-8");
+    const out: string[] = [];
+    for (const line of c.split("\n")) {
+      if (line.startsWith("#") || !line.trim()) continue;
+      const p = line.split("\t");
+      if (p.length >= 7) out.push(`${p[5]}=${p[6]}`);
+    }
+    return out.join("; ");
+  } catch { return ""; }
+}
+function getCookieVal(name: string): string | null {
+  try {
+    const c = readFileSync(COOKIE_PATH, "utf-8");
+    for (const line of c.split("\n")) {
+      if (line.startsWith("#") || !line.trim()) continue;
+      const p = line.split("\t");
+      if (p.length >= 7 && p[5] === name) return p[6];
+    }
+  } catch {}
+  return null;
+}
+function getSapisidHash(): string | null {
+  const sapisid = getCookieVal("SAPISID") || getCookieVal("__Secure-3PAPISID") || getCookieVal("__Secure-1PAPISID");
+  if (!sapisid) return null;
+  const ts = Math.floor(Date.now() / 1000);
+  const hash = createHash("sha1").update(`${ts} ${sapisid} https://www.youtube.com`).digest("hex");
+  return `${ts}_${hash}`;
+}
 
 // ─── Chunk windowing ────────────────────────────────────────────
 // Every proxied request is bounded to one of these windows instead of
@@ -58,10 +93,14 @@ export function prefetchStream(url: string, videoId: string): void {
   const key = videoId || vidKey(url);
   const e = prefetched.get(key);
   if (e && Date.now() - e.ts < PREFETCH_TTL) return;
-  fetch(url, {
-    headers: { Range: `bytes=0-${INITIAL_CHUNK}`, "User-Agent": YT_AGENT },
-    signal: AbortSignal.timeout(8000),
-  })
+  const cookies = loadCookies();
+  const h: Record<string, string> = { Range: `bytes=0-${INITIAL_CHUNK}`, "User-Agent": YT_AGENT };
+  if (cookies) h["Cookie"] = cookies;
+  const sh = getSapisidHash();
+  if (sh) { h["Authorization"] = `SAPISIDHASH ${sh}`; h["X-Goog-AuthUser"] = "0"; }
+  const vis = getCookieVal("VISITOR_INFO1_LIVE");
+  if (vis) h["X-Goog-Visitor-Id"] = vis;
+  fetch(url, { headers: h, signal: AbortSignal.timeout(8000) })
     .then((r) => {
       if (r.ok || r.status === 206) prefetched.set(key, { ts: Date.now(), body: r.body });
     })
@@ -130,10 +169,12 @@ export async function proxyStream(
       "Access-Control-Allow-Origin": "*",
     });
     if (!prefetched.get(cacheKey)) {
-      fetch(upstreamUrl, {
-        headers: { Range: "bytes=0-0", "User-Agent": YT_AGENT },
-        signal: AbortSignal.timeout(5000),
-      })
+      const cookies = loadCookies();
+      const hh: Record<string, string> = { Range: "bytes=0-0", "User-Agent": YT_AGENT };
+      if (cookies) hh["Cookie"] = cookies;
+      const sh2 = getSapisidHash();
+      if (sh2) { hh["Authorization"] = `SAPISIDHASH ${sh2}`; hh["X-Goog-AuthUser"] = "0"; }
+      fetch(upstreamUrl, { headers: hh, signal: AbortSignal.timeout(5000) })
         .then((r) => r.arrayBuffer())
         .catch(() => {});
     }
@@ -176,6 +217,16 @@ export async function proxyStream(
     Connection: "keep-alive",
     "Accept-Encoding": "identity",
   });
+  // MWEB googlevideo needs same cookies + SAPISIDHASH as InnerTube
+  const cookies = loadCookies();
+  if (cookies) upstreamHeaders.set("Cookie", cookies);
+  const sapisidHash = getSapisidHash();
+  if (sapisidHash) {
+    upstreamHeaders.set("Authorization", `SAPISIDHASH ${sapisidHash}`);
+    upstreamHeaders.set("X-Goog-AuthUser", "0");
+  }
+  const visitor = getCookieVal("VISITOR_INFO1_LIVE");
+  if (visitor) upstreamHeaders.set("X-Goog-Visitor-Id", visitor);
   const accept = headers.get("Accept");
   if (accept) upstreamHeaders.set("Accept", accept);
 
