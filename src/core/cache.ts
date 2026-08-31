@@ -140,6 +140,7 @@ const countStreams = db.prepare(`SELECT COUNT(*) as count FROM streams`);
 const countExpiredStreams = db.prepare(`SELECT COUNT(*) as count FROM streams WHERE expiresAt <= ?`);
 const deleteAllMeta = db.prepare(`DELETE FROM metadata`);
 const deleteAllStreams = db.prepare(`DELETE FROM streams`);
+const deleteStream = db.prepare(`DELETE FROM streams WHERE videoId = ?`);
 
 // ─── Metadata Cache ───────────────────────────────────────────
 
@@ -245,6 +246,10 @@ export function getCacheStats() {
       },
     },
   };
+}
+
+export function deleteCachedStream(videoId: string): void {
+  deleteStream.run(videoId);
 }
 
 export function flushCache(): { metadata: number; streams: number } {

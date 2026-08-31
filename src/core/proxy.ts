@@ -114,15 +114,38 @@ export async function proxyStream(
   if (accept) upstreamHeaders.set("Accept", accept);
 
   try {
-    const upstream = await fetch(upstreamUrl, {
+    let upstream: Response = await fetch(upstreamUrl, {
       method: "GET",
       headers: upstreamHeaders,
       keepalive: true,
       signal: AbortSignal.timeout(15000),
     } as any);
 
+    // Single retry on 403 — try alternative Range (some videos need 0-131072 vs 0-99999)
+    if (!upstream.ok && upstream.status === 403) {
+      const retryHeaders = new Headers(upstreamHeaders);
+      // If we sent 0-99999, try 0-131072 (prefetch size) or 0-999
+      const altRange = range === "bytes=0-99999" ? "bytes=0-131072" : "bytes=0-99999";
+      retryHeaders.set("Range", altRange);
+      try {
+        const retry = await fetch(upstreamUrl, {
+          method: "GET",
+          headers: retryHeaders,
+          keepalive: true,
+          signal: AbortSignal.timeout(15000),
+        } as any);
+        if (retry.ok || retry.status === 206) {
+          upstream = retry;
+        } else if (retry.status !== 403) {
+          upstream = retry; // return non-403 error to caller
+        }
+        // else keep original 403 for outer handler
+      } catch {}
+    }
+
     if (!upstream.ok && upstream.status !== 206) {
-      return new Response(JSON.stringify({ error: "upstream_stream_failed", status: upstream.status }), {
+      // Return 502 but include retry hint for saudio to refresh cache
+      return new Response(JSON.stringify({ error: "upstream_stream_failed", status: upstream.status, retryable: upstream.status === 403 }), {
         status: 502,
         headers: { "content-type": "application/json", "Access-Control-Allow-Origin": "*" },
       });

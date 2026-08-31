@@ -3,7 +3,7 @@
  * Updated: Request counter.
  */
 
-import { getCachedStream, setCachedStream, parseExpiryFromUrl, incrementSaudioRequests } from "../core/cache";
+import { getCachedStream, setCachedStream, deleteCachedStream, incrementSaudioRequests } from "../core/cache";
 import { resolver } from "../core/resolver";
 import { proxyStream, prefetchStream } from "../core/proxy";
 
@@ -64,7 +64,27 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
   }
 
   // HEAD support + instant prefetch
-  return proxyStream(streamUrl, req.headers, req.method);
+  let res = await proxyStream(streamUrl, req.headers, req.method);
+
+  // If upstream 403 (expire/sig), refresh cache once and retry
+  if (res.status === 502) {
+    try {
+      const clone = res.clone();
+      const body: any = await clone.json();
+      if (body?.retryable) {
+        deleteCachedStream(videoId);
+        const fresh = await resolver.resolveAudioOnly(videoId);
+        if (fresh) {
+          setCachedStream(videoId, fresh.streamUrl, fresh.expiresAt);
+          // re-prefetch fresh
+          try { prefetchStream(fresh.streamUrl, videoId); } catch {}
+          return proxyStream(fresh.streamUrl, req.headers, req.method);
+        }
+      }
+    } catch {}
+  }
+
+  return res;
 }
 
 function json(data: any, status = 200): Response {
