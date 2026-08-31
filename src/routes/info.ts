@@ -4,8 +4,9 @@
  */
 
 import { extractVideoId } from "../core/extractor";
-import { getCachedMeta, setCachedMeta, incrementInfoRequests } from "../core/cache";
+import { getCachedMeta, setCachedMeta, setCachedStream, incrementInfoRequests } from "../core/cache";
 import { resolver } from "../core/resolver";
+import { prefetchStream } from "../core/proxy";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -48,6 +49,21 @@ export async function handleInfo(req: Request): Promise<Response> {
     if (addressUrl && addressUrl !== "localhost" && addressUrl !== "0.0.0.0") {
       streamUrl = `${addressUrl.replace(/\/$/, "")}/saudio/${videoId}`;
     }
+    // Warm first chunk even for cached meta — makes /saudio instant
+    try {
+      const { getCachedStream } = await import("../core/cache");
+      const cs = getCachedStream(videoId);
+      if (cs) prefetchStream(cs.streamUrl, videoId);
+      else {
+        // No stream cached yet — resolve in background without blocking response
+        resolver.resolveAudioOnly(videoId).then((a) => {
+          if (a) {
+            setCachedStream(videoId, a.streamUrl, a.expiresAt);
+            prefetchStream(a.streamUrl, videoId);
+          }
+        }).catch(() => {});
+      }
+    } catch {}
 
     return json({
       videoId: cached.videoId,
@@ -67,8 +83,11 @@ export async function handleInfo(req: Request): Promise<Response> {
     return json({ error: `Failed to resolve video: ${videoId}` }, 502);
   }
 
-  const { meta } = resolved;
+  const { meta, audio } = resolved;
   setCachedMeta(meta);
+  // Cache stream + warm first chunk while /info responds — makes next /saudio instant (0.05s)
+  setCachedStream(videoId, audio.streamUrl, audio.expiresAt);
+  try { prefetchStream(audio.streamUrl, videoId); } catch {}
 
   const env = getEnvConfig();
   const addressUrl = env.ADDRESS_URL;
