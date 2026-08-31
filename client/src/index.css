@@ -412,6 +412,8 @@ a:hover { color: var(--accent-hover); }
   box-shadow: 0 0 8px rgba(251, 146, 60, 0.4);
 }
 .yt-progress-bar:hover .yt-progress-thumb { transform: translate(-50%, -50%) scale(1); }
+.yt-progress-dragging .yt-progress-thumb { transform: translate(-50%, -50%) scale(1); }
+.yt-progress-dragging { height: 5px; }
 .yt-progress-time {
   display: flex;
   gap: 8px;

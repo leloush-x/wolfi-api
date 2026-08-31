@@ -66,13 +66,3 @@ export interface TrackInfo {
   proxyUrl: string;
   cached: boolean;
 }
-
-export interface StreamResponse {
-  videoId: string;
-  streamUrl: string;
-  proxyUrl: string;
-  expiresAt: number;
-  expiresIn: number;
-  cached: boolean;
-  note: string;
-}

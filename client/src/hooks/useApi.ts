@@ -1,10 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { AdminData, TrackInfo } from '../types';
 
-const BASE = '';
-
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init);
+  const res = await fetch(path, init);
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
   return res.json();
 }
@@ -15,15 +13,9 @@ export function useAdmin(pollInterval = 5000) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try {
-      const d = await api<AdminData>('/admin');
-      setData(d);
-      setError(null);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    try { const d = await api<AdminData>('/admin'); setData(d); setError(null); }
+    catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -53,14 +45,4 @@ export function useTrackInfo(videoId: string | null) {
   }, [videoId]);
 
   return { data, error, loading };
-}
-
-export function useInterval(cb: () => void, ms: number | null) {
-  const cbRef = useRef(cb);
-  cbRef.current = cb;
-  useEffect(() => {
-    if (ms === null) return;
-    const id = setInterval(() => cbRef.current(), ms);
-    return () => clearInterval(id);
-  }, [ms]);
 }

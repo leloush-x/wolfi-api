@@ -15,16 +15,11 @@ function fmt(s: number): string {
 function describeMediaError(err: MediaError | null): string {
   if (!err) return 'Unknown playback error';
   switch (err.code) {
-    case MediaError.MEDIA_ERR_ABORTED:
-      return 'Playback aborted';
-    case MediaError.MEDIA_ERR_NETWORK:
-      return 'Network error while fetching stream — likely blocked by CORS or the proxy dropped the connection';
-    case MediaError.MEDIA_ERR_DECODE:
-      return 'Browser could not decode the audio stream';
-    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-      return 'Source not supported — check Content-Type header from the proxy, or a CORS preflight failure';
-    default:
-      return `Playback failed (code ${err.code})`;
+    case MediaError.MEDIA_ERR_ABORTED: return 'Playback aborted';
+    case MediaError.MEDIA_ERR_NETWORK: return 'Network error while fetching stream — likely blocked by CORS or the proxy dropped the connection';
+    case MediaError.MEDIA_ERR_DECODE: return 'Browser could not decode the audio stream';
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED: return 'Source not supported — check Content-Type header from the proxy, or a CORS preflight failure';
+    default: return `Playback failed (code ${err.code})`;
   }
 }
 
@@ -42,8 +37,13 @@ export default function ApiGround() {
   const [vol, setVol] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [dragPct, setDragPct] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading2, setLoading2] = useState(false);
+
+  // Display pct: frozen during drag, live otherwise
+  const displayPct = dragging ? dragPct : pct;
+  const displayCur = dragging ? (dragPct / 100) * (dur || 0) : cur;
 
   useEffect(() => {
     const el = new Audio();
@@ -56,24 +56,12 @@ export default function ApiGround() {
         setPct((el.currentTime / el.duration) * 100);
       }
     };
-    const onMeta = () => {
-      if (el.duration && isFinite(el.duration)) {
-        setDur(el.duration);
-      }
-    };
+    const onMeta = () => { if (el.duration && isFinite(el.duration)) setDur(el.duration); };
     const onEnded = () => setPlaying(false);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
-    const onError = () => {
-      console.error('Audio error:', el.error);
-      setError(describeMediaError(el.error));
-      setPlaying(false);
-      setLoading2(false);
-    };
-    const onCanPlay = () => {
-      setLoading2(false);
-      setError(null);
-    };
+    const onError = () => { setError(describeMediaError(el.error)); setPlaying(false); setLoading2(false); };
+    const onCanPlay = () => { setLoading2(false); setError(null); };
     const onWaiting = () => setLoading2(true);
     const onPlaying = () => { setLoading2(false); setPlaying(true); };
 
@@ -107,12 +95,7 @@ export default function ApiGround() {
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !track) return;
-    setError(null);
-    setPct(0);
-    setCur(0);
-    setDur(0);
-    setPlaying(false);
-    setLoading2(true);
+    setError(null); setPct(0); setCur(0); setDur(0); setPlaying(false); setLoading2(true);
     el.src = track.proxyUrl;
     el.load();
   }, [track]);
@@ -124,49 +107,69 @@ export default function ApiGround() {
   const togglePlay = useCallback(() => {
     const el = audioRef.current;
     if (!el) return;
-    if (el.paused) {
-      setError(null);
-      el.play().catch((err) => {
-        console.error('Play failed:', err);
-        setError('Playback blocked — click again or check console');
-      });
-    } else {
-      el.pause();
-    }
+    if (el.paused) { setError(null); el.play().catch(() => setError('Playback blocked — click again or check console')); }
+    else el.pause();
   }, []);
 
   const seekTo = useCallback((p: number) => {
     const el = audioRef.current;
-    if (el && el.duration && isFinite(el.duration)) {
-      el.currentTime = p * el.duration;
-    }
+    if (el && el.duration && isFinite(el.duration)) el.currentTime = p * el.duration;
   }, []);
 
+  const getPercentFromEvent = useCallback((clientX: number) => {
+    const rect = barRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  }, []);
+
+  // Mouse drag
   const onBarDown = (e: React.MouseEvent) => {
     if (!barRef.current) return;
+    const p = getPercentFromEvent(e.clientX);
     setDragging(true);
-    const rect = barRef.current.getBoundingClientRect();
-    seekTo(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+    setDragPct(p * 100);
   };
 
   useEffect(() => {
     if (!dragging) return;
-    const onMove = (e: MouseEvent) => {
-      const rect = barRef.current?.getBoundingClientRect();
-      if (rect) seekTo(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+    const onMove = (e: MouseEvent) => setDragPct(getPercentFromEvent(e.clientX) * 100);
+    const onUp = (e: MouseEvent) => {
+      seekTo(getPercentFromEvent(e.clientX));
+      setDragging(false);
     };
-    const onUp = () => setDragging(false);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [dragging, seekTo]);
+  }, [dragging, seekTo, getPercentFromEvent]);
 
+  // Touch drag
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (!barRef.current) return;
+    const p = getPercentFromEvent(e.touches[0].clientX);
+    setDragging(true);
+    setDragPct(p * 100);
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: TouchEvent) => { e.preventDefault(); setDragPct(getPercentFromEvent(e.touches[0].clientX) * 100); };
+    const onEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      if (touch) seekTo(getPercentFromEvent(touch.clientX));
+      setDragging(false);
+    };
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    return () => { window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onEnd); };
+  }, [dragging, seekTo, getPercentFromEvent]);
+
+  // Keyboard
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-      if (e.code === 'ArrowLeft' && audioRef.current) { audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 5); }
-      if (e.code === 'ArrowRight' && audioRef.current?.duration) { audioRef.current.currentTime = Math.min(audioRef.current.duration, audioRef.current.currentTime + 5); }
+      if (e.code === 'ArrowLeft' && audioRef.current) audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 5);
+      if (e.code === 'ArrowRight' && audioRef.current?.duration) audioRef.current.currentTime = Math.min(audioRef.current.duration, audioRef.current.currentTime + 5);
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -179,13 +182,7 @@ export default function ApiGround() {
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <Input
-              icon={<Search size={16} />}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
-              placeholder="Paste YouTube URL, video ID, or any supported link..."
-            />
+            <Input icon={<Search size={16} />} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleFetch()} placeholder="Paste YouTube URL, video ID, or any supported link..." />
           </div>
           <Button variant="primary" icon={loading ? <Loader2 size={15} className="spin" /> : <Search size={15} />} onClick={handleFetch} disabled={loading}>
             {loading ? 'Fetching...' : 'Fetch'}
@@ -227,13 +224,18 @@ export default function ApiGround() {
             </div>
 
             <div className="yt-progress">
-              <div className="yt-progress-bar" ref={barRef} onMouseDown={onBarDown}>
-                <div className="yt-progress-fill" style={{ width: `${pct}%` }} />
-                <div className="yt-progress-thumb" style={{ left: `${pct}%` }} />
+              <div
+                className={`yt-progress-bar ${dragging ? 'yt-progress-dragging' : ''}`}
+                ref={barRef}
+                onMouseDown={onBarDown}
+                onTouchStart={onTouchStart}
+              >
+                <div className="yt-progress-fill" style={{ width: `${displayPct}%` }} />
+                <div className="yt-progress-thumb" style={{ left: `${displayPct}%` }} />
               </div>
               <div className="yt-progress-time">
-                <span>{fmt(cur)}</span>
-                <span>{dur ? `-${fmt(dur - cur)}` : fmt(track.duration)}</span>
+                <span>{fmt(displayCur)}</span>
+                <span>{dur ? `-${fmt(dur - displayCur)}` : fmt(track.duration)}</span>
               </div>
             </div>
 
@@ -249,12 +251,7 @@ export default function ApiGround() {
                     {muted || vol === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
                   </button>
                   <div className="yt-volume-slider-wrap">
-                    <input
-                      type="range" min="0" max="1" step="0.01"
-                      value={muted ? 0 : vol}
-                      onChange={(e) => { setVol(parseFloat(e.target.value)); setMuted(false); }}
-                      className="yt-volume-slider"
-                    />
+                    <input type="range" min="0" max="1" step="0.01" value={muted ? 0 : vol} onChange={(e) => { setVol(parseFloat(e.target.value)); setMuted(false); }} className="yt-volume-slider" />
                   </div>
                 </div>
                 <a href={`${track.proxyUrl}?download`} download className="yt-btn yt-btn-sm" style={{ textDecoration: 'none' }}>

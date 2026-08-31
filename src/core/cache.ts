@@ -1,7 +1,5 @@
 /**
  * cache.ts - SQLite WAL client for TTL management & stream link persistence
- * Uses Bun's built-in bun:sqlite for high-speed caching.
- * Updated: Added request counters, cache toggle, cookie status tracking.
  */
 
 import { Database } from "bun:sqlite";
@@ -9,59 +7,51 @@ import { join } from "path";
 
 const DB_PATH = join(import.meta.dir, "../../cache.sqlite");
 
-// Default TTLs in seconds
-const META_TTL = 7 * 24 * 60 * 60; // 7 days
-const STREAM_SAFETY_BUFFER = 10 * 60; // 10 minutes before actual expiry
+const META_TTL = 7 * 24 * 60 * 60;
+const STREAM_SAFETY_BUFFER = 10 * 60;
 
 // ─── Cache Toggle ──────────────────────────────────────────────
 let cacheEnabled = true;
 
-export function isCacheEnabled(): boolean {
-  return cacheEnabled;
-}
+export function isCacheEnabled(): boolean { return cacheEnabled; }
+export function setCacheEnabled(val: boolean): void { cacheEnabled = val; }
 
-export function setCacheEnabled(val: boolean): void {
-  cacheEnabled = val;
-}
-
-// ─── Request Counters ──────────────────────────────────────────
+// ─── Request Counters (ring buffer for O(1) insert) ────────────
 let totalInfoRequests = 0;
 let totalSaudioRequests = 0;
-let totalApiRequests = 0;
-const requestTimestamps: number[] = [];
+const RING_SIZE = 1000;
+const requestRing = new Float64Array(RING_SIZE);
+let ringHead = 0;
+let ringCount = 0;
 
-export function incrementInfoRequests(): void {
-  totalInfoRequests++;
-  totalApiRequests++;
-  requestTimestamps.push(Date.now());
-  // Keep only last 1000 timestamps for rate calculation
-  if (requestTimestamps.length > 1000) requestTimestamps.shift();
+function pushTimestamp(): void {
+  requestRing[ringHead] = Date.now();
+  ringHead = (ringHead + 1) % RING_SIZE;
+  if (ringCount < RING_SIZE) ringCount++;
 }
 
-export function incrementSaudioRequests(): void {
-  totalSaudioRequests++;
-  totalApiRequests++;
-  requestTimestamps.push(Date.now());
-  if (requestTimestamps.length > 1000) requestTimestamps.shift();
-}
+export function incrementInfoRequests(): void { totalInfoRequests++; pushTimestamp(); }
+export function incrementSaudioRequests(): void { totalSaudioRequests++; pushTimestamp(); }
 
 export function getRequestStats() {
   const now = Date.now();
-  const lastMinute = requestTimestamps.filter((t) => now - t < 60_000).length;
-  const lastHour = requestTimestamps.filter((t) => now - t < 3_600_000).length;
-  const requestsPerMin = lastMinute;
-  const requestsPerHour = lastHour;
-
+  let perMinute = 0;
+  let perHour = 0;
+  for (let i = 0; i < ringCount; i++) {
+    const ts = requestRing[(ringHead - 1 - i + RING_SIZE) % RING_SIZE];
+    const age = now - ts;
+    if (age < 60_000) perMinute++;
+    if (age < 3_600_000) perHour++;
+  }
   return {
-    total: totalApiRequests,
+    total: totalInfoRequests + totalSaudioRequests,
     info: totalInfoRequests,
     saudio: totalSaudioRequests,
-    rate: {
-      perMinute: requestsPerMin,
-      perHour: requestsPerHour,
-    },
+    rate: { perMinute, perHour },
   };
 }
+
+// ─── Cache Types ───────────────────────────────────────────────
 
 export interface CachedMeta {
   videoId: string;
@@ -82,19 +72,18 @@ export interface CachedStream {
   expiresAt: number;
 }
 
-// Hit/miss counters for /admin
+// Hit/miss counters
 let metaHits = 0;
 let metaMisses = 0;
 let streamHits = 0;
 let streamMisses = 0;
 
-const db = new Database(DB_PATH);
+// ─── SQLite Setup ──────────────────────────────────────────────
 
-// Enable WAL mode for concurrent read/write
+const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL;");
 db.exec("PRAGMA busy_timeout = 5000;");
 
-// Create tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS metadata (
     videoId TEXT PRIMARY KEY,
@@ -107,7 +96,6 @@ db.exec(`
     createdAt INTEGER NOT NULL,
     expiresAt INTEGER NOT NULL
   );
-
   CREATE TABLE IF NOT EXISTS streams (
     videoId TEXT PRIMARY KEY,
     streamUrl TEXT NOT NULL,
@@ -116,25 +104,10 @@ db.exec(`
   );
 `);
 
-// Prepared statements
-const insertMeta = db.prepare(`
-  INSERT OR REPLACE INTO metadata (videoId, title, channel, duration, durationFormatted, thumbnail, ytLink, createdAt, expiresAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
-
-const selectMeta = db.prepare(`
-  SELECT * FROM metadata WHERE videoId = ? AND expiresAt > ?
-`);
-
-const insertStream = db.prepare(`
-  INSERT OR REPLACE INTO streams (videoId, streamUrl, createdAt, expiresAt)
-  VALUES (?, ?, ?, ?)
-`);
-
-const selectStream = db.prepare(`
-  SELECT * FROM streams WHERE videoId = ? AND expiresAt > ?
-`);
-
+const insertMeta = db.prepare(`INSERT OR REPLACE INTO metadata VALUES (?,?,?,?,?,?,?,?,?)`);
+const selectMeta = db.prepare(`SELECT * FROM metadata WHERE videoId = ? AND expiresAt > ?`);
+const insertStream = db.prepare(`INSERT OR REPLACE INTO streams VALUES (?,?,?,?)`);
+const selectStream = db.prepare(`SELECT * FROM streams WHERE videoId = ? AND expiresAt > ?`);
 const countMeta = db.prepare(`SELECT COUNT(*) as count FROM metadata`);
 const countStreams = db.prepare(`SELECT COUNT(*) as count FROM streams`);
 const countExpiredStreams = db.prepare(`SELECT COUNT(*) as count FROM streams WHERE expiresAt <= ?`);
@@ -146,23 +119,9 @@ const deleteStream = db.prepare(`DELETE FROM streams WHERE videoId = ?`);
 
 export function getCachedMeta(videoId: string): CachedMeta | null {
   if (!cacheEnabled) { metaMisses++; return null; }
-
   const now = Math.floor(Date.now() / 1000);
   const row = selectMeta.get(videoId, now) as any;
-  if (row) {
-    metaHits++;
-    return {
-      videoId: row.videoId,
-      title: row.title,
-      channel: row.channel,
-      duration: row.duration,
-      durationFormatted: row.durationFormatted,
-      thumbnail: row.thumbnail,
-      ytLink: row.ytLink,
-      createdAt: row.createdAt,
-      expiresAt: row.expiresAt,
-    };
-  }
+  if (row) { metaHits++; return row; }
   metaMisses++;
   return null;
 }
@@ -170,29 +129,16 @@ export function getCachedMeta(videoId: string): CachedMeta | null {
 export function setCachedMeta(meta: Omit<CachedMeta, "createdAt" | "expiresAt">): void {
   if (!cacheEnabled) return;
   const now = Math.floor(Date.now() / 1000);
-  insertMeta.run(
-    meta.videoId, meta.title, meta.channel, meta.duration,
-    meta.durationFormatted, meta.thumbnail, meta.ytLink,
-    now, now + META_TTL
-  );
+  insertMeta.run(meta.videoId, meta.title, meta.channel, meta.duration, meta.durationFormatted, meta.thumbnail, meta.ytLink, now, now + META_TTL);
 }
 
 // ─── Stream URL Cache ─────────────────────────────────────────
 
 export function getCachedStream(videoId: string): CachedStream | null {
   if (!cacheEnabled) { streamMisses++; return null; }
-
   const now = Math.floor(Date.now() / 1000);
   const row = selectStream.get(videoId, now) as any;
-  if (row) {
-    streamHits++;
-    return {
-      videoId: row.videoId,
-      streamUrl: row.streamUrl,
-      createdAt: row.createdAt,
-      expiresAt: row.expiresAt,
-    };
-  }
+  if (row) { streamHits++; return row; }
   streamMisses++;
   return null;
 }
@@ -200,16 +146,14 @@ export function getCachedStream(videoId: string): CachedStream | null {
 export function setCachedStream(videoId: string, streamUrl: string, expiresAt: number): void {
   if (!cacheEnabled) return;
   const now = Math.floor(Date.now() / 1000);
-  const safeExpiry = expiresAt - STREAM_SAFETY_BUFFER;
-  insertStream.run(videoId, streamUrl, now, safeExpiry);
+  insertStream.run(videoId, streamUrl, now, expiresAt - STREAM_SAFETY_BUFFER);
 }
 
 export function parseExpiryFromUrl(url: string): number | null {
   try {
-    const u = new URL(url);
-    const expire = u.searchParams.get("expire");
+    const expire = new URL(url).searchParams.get("expire");
     if (expire) return parseInt(expire, 10);
-  } catch { }
+  } catch {}
   return null;
 }
 
@@ -220,53 +164,26 @@ export function getCacheStats() {
   const totalMeta = (countMeta.get() as any).count;
   const totalStreams = (countStreams.get() as any).count;
   const expiredStreams = (countExpiredStreams.get(now) as any).count;
-
   return {
     enabled: cacheEnabled,
     metadata: { total: totalMeta },
-    streams: {
-      total: totalStreams,
-      active: totalStreams - expiredStreams,
-      expired: expiredStreams,
-    },
+    streams: { total: totalStreams, active: totalStreams - expiredStreams, expired: expiredStreams },
     hitRatios: {
-      metadata: {
-        hits: metaHits,
-        misses: metaMisses,
-        ratio: metaHits + metaMisses > 0
-          ? `${((metaHits / (metaHits + metaMisses)) * 100).toFixed(1)}%`
-          : "N/A",
-      },
-      streams: {
-        hits: streamHits,
-        misses: streamMisses,
-        ratio: streamHits + streamMisses > 0
-          ? `${((streamHits / (streamHits + streamMisses)) * 100).toFixed(1)}%`
-          : "N/A",
-      },
+      metadata: { hits: metaHits, misses: metaMisses, ratio: metaHits + metaMisses > 0 ? `${((metaHits / (metaHits + metaMisses)) * 100).toFixed(1)}%` : "N/A" },
+      streams: { hits: streamHits, misses: streamMisses, ratio: streamHits + streamMisses > 0 ? `${((streamHits / (streamHits + streamMisses)) * 100).toFixed(1)}%` : "N/A" },
     },
   };
 }
 
-export function deleteCachedStream(videoId: string): void {
-  deleteStream.run(videoId);
-}
+export function deleteCachedStream(videoId: string): void { deleteStream.run(videoId); }
 
 export function flushCache(): { metadata: number; streams: number } {
   const metaResult = deleteAllMeta.run();
   const streamResult = deleteAllStreams.run();
-  metaHits = 0;
-  metaMisses = 0;
-  streamHits = 0;
-  streamMisses = 0;
-  return {
-    metadata: metaResult.changes,
-    streams: streamResult.changes,
-  };
+  metaHits = 0; metaMisses = 0; streamHits = 0; streamMisses = 0;
+  return { metadata: metaResult.changes, streams: streamResult.changes };
 }
 
 export function purgeExpiredStreams(): number {
-  const now = Math.floor(Date.now() / 1000);
-  const result = db.prepare(`DELETE FROM streams WHERE expiresAt <= ?`).run(now);
-  return result.changes;
+  return db.prepare(`DELETE FROM streams WHERE expiresAt <= ?`).run(Math.floor(Date.now() / 1000)).changes;
 }
