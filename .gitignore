@@ -36,3 +36,8 @@ Thumbs.db
 
 # Vite cache
 client/node_modules/.vite
+
+# Debug harnesses (local only)
+debug.ts
+debug.tsx
+debug*.ts
