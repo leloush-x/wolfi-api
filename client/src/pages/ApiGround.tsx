@@ -5,8 +5,10 @@ import { Card, Button, Input } from '../components/UI';
 
 function fmt(s: number): string {
   if (!s || !isFinite(s)) return '0:00';
-  const m = Math.floor(s / 60);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
   const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
@@ -17,39 +19,35 @@ export default function ApiGround() {
 
   const audio = useRef<HTMLAudioElement | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [pct, setPct] = useState(0);
-  const [cur, setCur] = useState(0);
-  const [dur, setDur] = useState(0);
+  const [, forceUpdate] = useState(0); // force re-render
   const [vol, setVol] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  // Create audio element once
+  // Helper: read state directly from audio element
+  const isPlaying = () => audio.current && !audio.current.paused;
+  const getCurrentTime = () => audio.current?.currentTime ?? 0;
+  const getDuration = () => audio.current?.duration ?? 0;
+  const getPct = () => { const d = getDuration(); return d ? (getCurrentTime() / d) * 100 : 0; };
+
+  // Create audio element
   useEffect(() => {
     const el = new Audio();
     el.preload = 'metadata';
     audio.current = el;
 
-    const onTime = () => { setCur(el.currentTime); if (el.duration) setPct((el.currentTime / el.duration) * 100); };
-    const onMeta = () => setDur(el.duration);
-    const onEnded = () => setPlaying(false);
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    // Poll every 250ms — always in sync with actual audio state
+    const interval = setInterval(() => forceUpdate((n) => n + 1), 250);
 
-    el.addEventListener('timeupdate', onTime);
-    el.addEventListener('loadedmetadata', onMeta);
-    el.addEventListener('ended', onEnded);
-    el.addEventListener('play', onPlay);
-    el.addEventListener('pause', onPause);
+    el.addEventListener('loadedmetadata', () => setLoaded(true));
+    el.addEventListener('ended', () => forceUpdate((n) => n + 1));
+    el.addEventListener('error', () => setLoaded(false));
 
     return () => {
+      clearInterval(interval);
       el.pause();
-      el.removeEventListener('timeupdate', onTime);
-      el.removeEventListener('loadedmetadata', onMeta);
-      el.removeEventListener('ended', onEnded);
-      el.removeEventListener('play', onPlay);
-      el.removeEventListener('pause', onPause);
+      el.src = '';
       audio.current = null;
     };
   }, []);
@@ -58,12 +56,9 @@ export default function ApiGround() {
   useEffect(() => {
     const el = audio.current;
     if (!el || !track) return;
+    setLoaded(false);
     el.src = track.proxyUrl;
     el.load();
-    setPlaying(false);
-    setPct(0);
-    setCur(0);
-    setDur(0);
   }, [track]);
 
   // Volume
@@ -74,23 +69,26 @@ export default function ApiGround() {
   const togglePlay = useCallback(() => {
     const el = audio.current;
     if (!el) return;
-    if (el.paused) el.play().catch(() => {});
-    else el.pause();
+    if (el.paused) {
+      el.play().catch(() => {});
+    } else {
+      el.pause();
+    }
+    // Force immediate UI update
+    forceUpdate((n) => n + 1);
   }, []);
 
   const seekTo = useCallback((p: number) => {
     const el = audio.current;
-    if (el && el.duration) el.currentTime = p * el.duration;
+    if (el && el.duration) {
+      el.currentTime = p * el.duration;
+      forceUpdate((n) => n + 1);
+    }
   }, []);
-
-  const onBarClick = (e: React.MouseEvent) => {
-    const rect = barRef.current!.getBoundingClientRect();
-    seekTo(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
-  };
 
   const onBarDown = (e: React.MouseEvent) => {
     setDragging(true);
-    onBarClick(e);
+    seekTo(Math.max(0, Math.min(1, (e.clientX - barRef.current!.getBoundingClientRect().left) / barRef.current!.getBoundingClientRect().width)));
   };
 
   useEffect(() => {
@@ -105,19 +103,23 @@ export default function ApiGround() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [dragging, seekTo]);
 
-  // Keyboard
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-      if (e.code === 'ArrowLeft') { e.preventDefault(); if (audio.current) audio.current.currentTime = Math.max(0, audio.current.currentTime - 5); }
-      if (e.code === 'ArrowRight') { e.preventDefault(); if (audio.current && audio.current.duration) audio.current.currentTime = Math.min(audio.current.duration, audio.current.currentTime + 5); }
+      if (e.code === 'ArrowLeft' && audio.current) { audio.current.currentTime = Math.max(0, audio.current.currentTime - 5); forceUpdate((n) => n + 1); }
+      if (e.code === 'ArrowRight' && audio.current?.duration) { audio.current.currentTime = Math.min(audio.current.duration, audio.current.currentTime + 5); forceUpdate((n) => n + 1); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [togglePlay]);
 
   const handleFetch = () => { const v = query.trim(); if (v) setActiveId(v); };
+
+  const cur = getCurrentTime();
+  const dur = getDuration();
+  const pct = getPct();
+  const playing = isPlaying();
 
   return (
     <div style={{ animation: 'fadeIn 0.3s var(--ease)' }}>
