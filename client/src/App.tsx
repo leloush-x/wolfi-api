@@ -1,62 +1,51 @@
-import { useState, useCallback } from 'react'
-import Dashboard from './pages/Dashboard'
-import Admin from './pages/Admin'
-import './index.css'
+import { useState } from 'react';
+import { LayoutDashboard, Music, Settings } from 'lucide-react';
+import Dashboard from './pages/Dashboard';
+import ApiGround from './pages/ApiGround';
+import Admin from './pages/Admin';
 
-type Page = 'dashboard' | 'admin'
+const TABS = [
+  { id: 'dash', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'api', label: 'API Ground', icon: Music },
+  { id: 'admin', label: 'Admin', icon: Settings },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export default function App() {
-  const [page, setPage] = useState<Page>('dashboard')
-  const [toasts, setToasts] = useState<{ id: number; msg: string; type: string }[]>([])
-
-  const toast = useCallback((msg: string, type = 'success') => {
-    const id = Date.now()
-    setToasts((t) => [...t, { id, msg, type }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000)
-  }, [])
+  const [active, setActive] = useState<TabId>('dash');
 
   return (
-    <>
-      <div className="bg-gradient" />
-      <div className="noise-overlay" />
-      <div className="scanline" />
-
-      <div className="app-container">
+    <div className="app">
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand-icon brand-icon-video">
+            <video src="/logo.mp4" autoPlay loop muted playsInline className="brand-video" />
+          </div>
+          <div>
+            <span className="brand-text">Wolfie</span>
+            <span className="brand-ver">v2.0</span>
+          </div>
+        </div>
         <nav className="nav">
-          <div className="nav-brand">
-            <div className="nav-brand-icon">🐺</div>
-            <span className="nav-brand-text">Wolfie</span>
-            <span className="nav-brand-version">v1.0</span>
-          </div>
-          <div className="nav-links">
+          {TABS.map(({ id, label, icon: Icon }) => (
             <button
-              className={`nav-link ${page === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setPage('dashboard')}
+              key={id}
+              className={`nav-btn ${active === id ? 'nav-btn-active' : ''}`}
+              onClick={() => setActive(id)}
             >
-              📊 Dashboard
+              <Icon size={16} />
+              {label}
             </button>
-            <button
-              className={`nav-link ${page === 'admin' ? 'active' : ''}`}
-              onClick={() => setPage('admin')}
-            >
-              ⚙️ Admin
-            </button>
-          </div>
+          ))}
         </nav>
+      </header>
 
-        <main className="main-content">
-          {page === 'dashboard' && <Dashboard toast={toast} />}
-          {page === 'admin' && <Admin toast={toast} />}
-        </main>
-      </div>
-
-      <div className="toast-container">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.type}`}>
-            {t.type === 'success' ? '✓' : '✗'} {t.msg}
-          </div>
-        ))}
-      </div>
-    </>
-  )
+      <main>
+        {active === 'dash' && <Dashboard />}
+        {active === 'api' && <ApiGround />}
+        {active === 'admin' && <Admin />}
+      </main>
+    </div>
+  );
 }
