@@ -12,6 +12,22 @@ function fmt(s: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
+function describeMediaError(err: MediaError | null): string {
+  if (!err) return 'Unknown playback error';
+  switch (err.code) {
+    case MediaError.MEDIA_ERR_ABORTED:
+      return 'Playback aborted';
+    case MediaError.MEDIA_ERR_NETWORK:
+      return 'Network error while fetching stream — likely blocked by CORS or the proxy dropped the connection';
+    case MediaError.MEDIA_ERR_DECODE:
+      return 'Browser could not decode the audio stream';
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return 'Source not supported — check Content-Type header from the proxy, or a CORS preflight failure';
+    default:
+      return `Playback failed (code ${err.code})`;
+  }
+}
+
 export default function ApiGround() {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -29,11 +45,9 @@ export default function ApiGround() {
   const [error, setError] = useState<string | null>(null);
   const [loading2, setLoading2] = useState(false);
 
-  // Create audio element once
   useEffect(() => {
     const el = new Audio();
     el.preload = 'auto';
-    el.crossOrigin = 'anonymous';
     audioRef.current = el;
 
     const onTime = () => {
@@ -51,8 +65,10 @@ export default function ApiGround() {
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onError = () => {
-      setError('Audio playback failed — try opening stream URL directly');
+      console.error('Audio error:', el.error);
+      setError(describeMediaError(el.error));
       setPlaying(false);
+      setLoading2(false);
     };
     const onCanPlay = () => {
       setLoading2(false);
@@ -88,7 +104,6 @@ export default function ApiGround() {
     };
   }, []);
 
-  // Load new track
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !track) return;
@@ -98,13 +113,10 @@ export default function ApiGround() {
     setDur(0);
     setPlaying(false);
     setLoading2(true);
-
-    // Set src directly — proxy handles CORS + Range
     el.src = track.proxyUrl;
     el.load();
   }, [track]);
 
-  // Volume
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = muted ? 0 : vol;
   }, [vol, muted]);
@@ -112,7 +124,6 @@ export default function ApiGround() {
   const togglePlay = useCallback(() => {
     const el = audioRef.current;
     if (!el) return;
-
     if (el.paused) {
       setError(null);
       el.play().catch((err) => {
@@ -197,7 +208,6 @@ export default function ApiGround() {
           )}
 
           <Card className="player-card">
-            {/* Thumbnail + Info */}
             <div className="player-top">
               <div className="player-thumb">
                 <img src={track.thumbnail} alt="" className="player-thumb-img" />
@@ -216,7 +226,6 @@ export default function ApiGround() {
               </div>
             </div>
 
-            {/* Progress */}
             <div className="yt-progress">
               <div className="yt-progress-bar" ref={barRef} onMouseDown={onBarDown}>
                 <div className="yt-progress-fill" style={{ width: `${pct}%` }} />
@@ -228,7 +237,6 @@ export default function ApiGround() {
               </div>
             </div>
 
-            {/* Controls */}
             <div className="yt-controls">
               <div className="yt-controls-left">
                 <button className="yt-btn" onClick={togglePlay}>
