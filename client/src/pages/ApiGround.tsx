@@ -17,78 +17,125 @@ export default function ApiGround() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const { data: track, loading } = useTrackInfo(activeId);
 
-  const audio = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const [, forceUpdate] = useState(0); // force re-render
+  const [playing, setPlaying] = useState(false);
+  const [pct, setPct] = useState(0);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
   const [vol, setVol] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading2, setLoading2] = useState(false);
 
-  // Helper: read state directly from audio element
-  const isPlaying = () => audio.current && !audio.current.paused;
-  const getCurrentTime = () => audio.current?.currentTime ?? 0;
-  const getDuration = () => audio.current?.duration ?? 0;
-  const getPct = () => { const d = getDuration(); return d ? (getCurrentTime() / d) * 100 : 0; };
-
-  // Create audio element
+  // Create audio element once
   useEffect(() => {
     const el = new Audio();
-    el.preload = 'metadata';
-    audio.current = el;
+    el.preload = 'auto';
+    el.crossOrigin = 'anonymous';
+    audioRef.current = el;
 
-    // Poll every 250ms — always in sync with actual audio state
-    const interval = setInterval(() => forceUpdate((n) => n + 1), 250);
+    const onTime = () => {
+      setCur(el.currentTime);
+      if (el.duration && isFinite(el.duration)) {
+        setPct((el.currentTime / el.duration) * 100);
+      }
+    };
+    const onMeta = () => {
+      if (el.duration && isFinite(el.duration)) {
+        setDur(el.duration);
+      }
+    };
+    const onEnded = () => setPlaying(false);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onError = () => {
+      setError('Audio playback failed — try opening stream URL directly');
+      setPlaying(false);
+    };
+    const onCanPlay = () => {
+      setLoading2(false);
+      setError(null);
+    };
+    const onWaiting = () => setLoading2(true);
+    const onPlaying = () => { setLoading2(false); setPlaying(true); };
 
-    el.addEventListener('loadedmetadata', () => setLoaded(true));
-    el.addEventListener('ended', () => forceUpdate((n) => n + 1));
-    el.addEventListener('error', () => setLoaded(false));
+    el.addEventListener('timeupdate', onTime);
+    el.addEventListener('loadedmetadata', onMeta);
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('play', onPlay);
+    el.addEventListener('pause', onPause);
+    el.addEventListener('error', onError);
+    el.addEventListener('canplay', onCanPlay);
+    el.addEventListener('waiting', onWaiting);
+    el.addEventListener('playing', onPlaying);
 
     return () => {
-      clearInterval(interval);
       el.pause();
-      el.src = '';
-      audio.current = null;
+      el.removeAttribute('src');
+      el.load();
+      el.removeEventListener('timeupdate', onTime);
+      el.removeEventListener('loadedmetadata', onMeta);
+      el.removeEventListener('ended', onEnded);
+      el.removeEventListener('play', onPlay);
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('error', onError);
+      el.removeEventListener('canplay', onCanPlay);
+      el.removeEventListener('waiting', onWaiting);
+      el.removeEventListener('playing', onPlaying);
+      audioRef.current = null;
     };
   }, []);
 
   // Load new track
   useEffect(() => {
-    const el = audio.current;
+    const el = audioRef.current;
     if (!el || !track) return;
-    setLoaded(false);
+    setError(null);
+    setPct(0);
+    setCur(0);
+    setDur(0);
+    setPlaying(false);
+    setLoading2(true);
+
+    // Set src directly — proxy handles CORS + Range
     el.src = track.proxyUrl;
     el.load();
   }, [track]);
 
   // Volume
   useEffect(() => {
-    if (audio.current) audio.current.volume = muted ? 0 : vol;
+    if (audioRef.current) audioRef.current.volume = muted ? 0 : vol;
   }, [vol, muted]);
 
   const togglePlay = useCallback(() => {
-    const el = audio.current;
+    const el = audioRef.current;
     if (!el) return;
+
     if (el.paused) {
-      el.play().catch(() => {});
+      setError(null);
+      el.play().catch((err) => {
+        console.error('Play failed:', err);
+        setError('Playback blocked — click again or check console');
+      });
     } else {
       el.pause();
     }
-    // Force immediate UI update
-    forceUpdate((n) => n + 1);
   }, []);
 
   const seekTo = useCallback((p: number) => {
-    const el = audio.current;
-    if (el && el.duration) {
+    const el = audioRef.current;
+    if (el && el.duration && isFinite(el.duration)) {
       el.currentTime = p * el.duration;
-      forceUpdate((n) => n + 1);
     }
   }, []);
 
   const onBarDown = (e: React.MouseEvent) => {
+    if (!barRef.current) return;
     setDragging(true);
-    seekTo(Math.max(0, Math.min(1, (e.clientX - barRef.current!.getBoundingClientRect().left) / barRef.current!.getBoundingClientRect().width)));
+    const rect = barRef.current.getBoundingClientRect();
+    seekTo(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
   };
 
   useEffect(() => {
@@ -107,19 +154,14 @@ export default function ApiGround() {
     const h = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-      if (e.code === 'ArrowLeft' && audio.current) { audio.current.currentTime = Math.max(0, audio.current.currentTime - 5); forceUpdate((n) => n + 1); }
-      if (e.code === 'ArrowRight' && audio.current?.duration) { audio.current.currentTime = Math.min(audio.current.duration, audio.current.currentTime + 5); forceUpdate((n) => n + 1); }
+      if (e.code === 'ArrowLeft' && audioRef.current) { audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 5); }
+      if (e.code === 'ArrowRight' && audioRef.current?.duration) { audioRef.current.currentTime = Math.min(audioRef.current.duration, audioRef.current.currentTime + 5); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [togglePlay]);
 
   const handleFetch = () => { const v = query.trim(); if (v) setActiveId(v); };
-
-  const cur = getCurrentTime();
-  const dur = getDuration();
-  const pct = getPct();
-  const playing = isPlaying();
 
   return (
     <div style={{ animation: 'fadeIn 0.3s var(--ease)' }}>
@@ -145,12 +187,22 @@ export default function ApiGround() {
 
       {track && (
         <div style={{ animation: 'slideUp 0.4s var(--ease)' }}>
+          {error && (
+            <Card style={{ marginBottom: 12, borderColor: 'var(--danger)' }}>
+              <div style={{ color: 'var(--danger)', fontSize: 13 }}>{error}</div>
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                Stream URL works: <a href={track.proxyUrl} target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>{track.proxyUrl}</a>
+              </div>
+            </Card>
+          )}
+
           <Card className="player-card">
+            {/* Thumbnail + Info */}
             <div className="player-top">
-              <div className="player-art">
-                <img src={track.thumbnail} alt="" className="player-art-img" />
-                <button className="player-art-play" onClick={togglePlay}>
-                  {playing ? <Pause size={24} /> : <Play size={24} style={{ marginLeft: 2 }} />}
+              <div className="player-thumb">
+                <img src={track.thumbnail} alt="" className="player-thumb-img" />
+                <button className="player-thumb-play" onClick={togglePlay}>
+                  {playing ? <Pause size={28} fill="#fff" color="#fff" /> : <Play size={28} fill="#fff" color="#fff" style={{ marginLeft: 3 }} />}
                 </button>
               </div>
               <div className="player-info">
