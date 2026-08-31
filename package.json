@@ -1,0 +1,35 @@
+{
+  "name": "wolfie",
+  "version": "1.0.0",
+  "description": "YouTube audio proxy powered by InnerTube MWEB",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot run src/server.ts",
+    "dev:client": "bun x vite --config client/vite.config.ts",
+    "dev:all": "bun run dev:client & bun run dev",
+    "build": "bun x vite build --config client/vite.config.ts",
+    "build:clean": "rm -rf dist && bun x vite build --config client/vite.config.ts",
+    "start": "bun run src/server.ts",
+    "preview": "bun x vite preview --config client/vite.config.ts",
+    "clean": "rm -rf dist",
+    "typecheck": "bun x tsc --noEmit && bun x tsc --noEmit -p client/tsconfig.json",
+    "typecheck:client": "bun x tsc --noEmit -p client/tsconfig.json",
+    "typecheck:server": "bun x tsc --noEmit",
+    "lint": "bun x oxlint"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.80.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.2.2"
+  }
+}

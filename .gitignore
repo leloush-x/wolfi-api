@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Build
+dist/
+client/dist
+
+# Cache & DB
+cache.sqlite
+cache.sqlite-shm
+cache.sqlite-wal
+*.sqlite
+
+# Cookies / Secrets
+cookies.txt
+.env
+.env.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+bun-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+
+# Vite cache
+client/node_modules/.vite
