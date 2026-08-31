@@ -18,6 +18,7 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
   const url = new URL(req.url);
   const wantsJson = url.searchParams.has("json") || url.searchParams.has("url") || req.headers.get("Accept")?.includes("application/json");
   const wantsRedirect = url.searchParams.has("redirect");
+  const wantsDownload = url.searchParams.has("download");
 
   const cached = getCachedStream(videoId);
 
@@ -62,6 +63,33 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
   }
   if (wantsRedirect) {
     return Response.redirect(streamUrl, 302);
+  }
+
+  // Download mode — strip Range so proxy fetches the full file, then attach download header
+  const isBrowserNav = req.headers.get("Accept")?.includes("text/html");
+  if (wantsDownload || isBrowserNav) {
+    const dlHeaders = new Headers(req.headers);
+    dlHeaders.delete("Range");
+    dlHeaders.delete("range");
+    dlHeaders.set("Accept", "audio/*, */*;q=0.9");
+    let dlRes = await proxyStream(streamUrl, dlHeaders, "GET", videoId);
+    if (dlRes.status === 502) {
+      try {
+        const clone = dlRes.clone();
+        const body: any = await clone.json();
+        if (body?.retryable) {
+          deleteCachedStream(videoId);
+          const fresh = await resolver.resolveAudioOnly(videoId);
+          if (fresh) {
+            setCachedStream(videoId, fresh.streamUrl, fresh.expiresAt);
+            dlRes = await proxyStream(fresh.streamUrl, dlHeaders, "GET", videoId);
+          }
+        }
+      } catch {}
+    }
+    const h = new Headers(dlRes.headers);
+    h.set("Content-Disposition", `attachment; filename="${videoId}.mp4"`);
+    return new Response(dlRes.body, { status: dlRes.status, headers: h });
   }
 
   // HEAD support + instant prefetch

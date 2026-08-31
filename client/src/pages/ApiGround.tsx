@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Play, Pause, Volume2, VolumeX, Music, ExternalLink, Clock, Hash, Radio, Loader2 } from 'lucide-react';
+import { Search, Play, Pause, Volume2, VolumeX, Music, ExternalLink, Clock, Hash, Radio, Loader2, Download } from 'lucide-react';
 import { useTrackInfo } from '../hooks/useApi';
 import { Card, Button, Input } from '../components/UI';
 
@@ -257,6 +257,9 @@ export default function ApiGround() {
                     />
                   </div>
                 </div>
+                <a href={`${track.proxyUrl}?download`} download className="yt-btn yt-btn-sm" style={{ textDecoration: 'none' }}>
+                  <Download size={18} />
+                </a>
               </div>
             </div>
           </Card>
