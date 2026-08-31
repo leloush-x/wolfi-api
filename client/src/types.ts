@@ -63,6 +63,7 @@ export interface TrackInfo {
   thumbnail: string;
   ytLink: string;
   streamUrl: string;
+  proxyUrl: string;
   cached: boolean;
 }
 
