@@ -15,6 +15,7 @@
     "typecheck": "bun x tsc --noEmit && bun x tsc --noEmit -p client/tsconfig.json",
     "typecheck:client": "bun x tsc --noEmit -p client/tsconfig.json",
     "typecheck:server": "bun x tsc --noEmit",
+    "deploy": "bash deploy.sh",
     "lint": "bun x oxlint"
   },
   "dependencies": {

@@ -405,7 +405,7 @@ a:hover { color: var(--accent-hover); }
   position: absolute;
   top: 0; left: 0;
   height: 100%;
-  background: var(--accent);
+  background: var(--peach);
   border-radius: 2px;
   pointer-events: none;
 }
@@ -413,12 +413,12 @@ a:hover { color: var(--accent-hover); }
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%) scale(0);
-  width: 12px; height: 12px;
+  width: 14px; height: 14px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--peach);
   pointer-events: none;
   transition: transform 0.1s var(--ease);
-  box-shadow: 0 0 6px rgba(0,0,0,0.5);
+  box-shadow: 0 0 8px rgba(251, 146, 60, 0.4);
 }
 .yt-progress-bar:hover .yt-progress-thumb { transform: translate(-50%, -50%) scale(1); }
 .yt-progress-time {
