@@ -5,7 +5,7 @@
 
 import { getCachedStream, setCachedStream, parseExpiryFromUrl, incrementSaudioRequests } from "../core/cache";
 import { resolver } from "../core/resolver";
-import { proxyStream } from "../core/proxy";
+import { proxyStream, prefetchStream } from "../core/proxy";
 
 export async function handleSaudio(req: Request, videoId: string): Promise<Response> {
   incrementSaudioRequests();
@@ -36,6 +36,12 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
     setCachedStream(videoId, streamUrl, expiresAt);
   }
 
+  // Warm prefetch for next request — makes next GET instant via prefetchedBody
+  // Fire-and-forget, non-blocking
+  try {
+    prefetchStream(streamUrl, videoId);
+  } catch {}
+
   // Instant proxy URL (always works, single RTT, handles Range)
   const host = req.headers.get("host") ?? "localhost:3000";
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
@@ -57,7 +63,8 @@ export async function handleSaudio(req: Request, videoId: string): Promise<Respo
     return Response.redirect(streamUrl, 302);
   }
 
-  return proxyStream(streamUrl, req.headers);
+  // HEAD support + instant prefetch
+  return proxyStream(streamUrl, req.headers, req.method);
 }
 
 function json(data: any, status = 200): Response {
