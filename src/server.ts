@@ -56,6 +56,19 @@ const server = Bun.serve({
     const url = new URL(req.url);
     const pathname = url.pathname;
 
+    // ── CORS preflight (must be before API routes) ───────
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
+          "Access-Control-Allow-Headers": "Range, Content-Type",
+          "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
+        },
+      });
+    }
+
     // ── API Routes ────────────────────────────────────────
     const route = matchRoute(pathname);
     if (route) {
@@ -64,18 +77,6 @@ const server = Bun.serve({
         case "saudio": return handleSaudio(req, route.param!);
         case "admin": return handleAdmin(req);
       }
-    }
-
-    // ── CORS preflight ───────────────────────────────────
-    if (req.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, HEAD, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Range",
-        },
-      });
     }
 
     // ── Static Assets ────────────────────────────────────

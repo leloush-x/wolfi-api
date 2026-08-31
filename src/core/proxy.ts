@@ -164,7 +164,7 @@ export async function proxyStream(
   if (method === "HEAD") {
     const h = new Headers({
       "Accept-Ranges": "bytes",
-      "Content-Type": "audio/webm",
+      "Content-Type": "audio/mp4",
       "Cache-Control": "public, max-age=86400",
       "Access-Control-Allow-Origin": "*",
     });
@@ -189,7 +189,7 @@ export async function proxyStream(
     if (pre) {
       const h = new Headers({
         "Accept-Ranges": "bytes",
-        "Content-Type": "audio/webm",
+        "Content-Type": "audio/mp4",
         "Cache-Control": "public, max-age=86400",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
@@ -276,7 +276,7 @@ export async function proxyStream(
       const v = upstream.headers.get(k);
       if (v) h.set(k, v);
     }
-    if (!h.has("content-type")) h.set("Content-Type", "audio/webm");
+    if (!h.has("content-type")) h.set("Content-Type", "audio/mp4");
     h.set("Cache-Control", "public, max-age=86400");
     h.set("Access-Control-Allow-Origin", "*");
     h.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
