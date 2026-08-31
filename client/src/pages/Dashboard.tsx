@@ -104,11 +104,11 @@ export default function Dashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <DonutChart
               values={[cache.metadata.total || 0, cache.streams.total || 0]}
-              colors={['var(--accent)', 'var(--purple)']}
+              colors={['var(--accent)', 'var(--peach)']}
             />
             <div className="ui-list" style={{ flex: 1 }}>
               <ListItem left="Metadata" right={`${cache.metadata.total} · ${cache.hitRatios.metadata.ratio}`} icon={<span className="dot-inline" style={{ background: 'var(--accent)' }} />} />
-              <ListItem left="Streams" right={`${cache.streams.total} · ${cache.hitRatios.streams.ratio}`} icon={<span className="dot-inline" style={{ background: 'var(--purple)' }} />} />
+              <ListItem left="Streams" right={`${cache.streams.total} · ${cache.hitRatios.streams.ratio}`} icon={<span className="dot-inline" style={{ background: 'var(--peach)' }} />} />
             </div>
           </div>
         </Card>

@@ -19,7 +19,7 @@ export function CardTitle({ children, icon }: { children: ReactNode; icon?: Reac
 }
 
 /* ─── Badge ─────────────────────────────────────────── */
-type BadgeVariant = 'success' | 'warning' | 'danger' | 'neutral' | 'accent' | 'purple';
+type BadgeVariant = 'success' | 'warning' | 'danger' | 'neutral' | 'accent' | 'peach';
 
 const BADGE_CLASSES: Record<BadgeVariant, string> = {
   success: 'ui-badge-success',
@@ -27,7 +27,7 @@ const BADGE_CLASSES: Record<BadgeVariant, string> = {
   danger: 'ui-badge-danger',
   neutral: 'ui-badge-neutral',
   accent: 'ui-badge-accent',
-  purple: 'ui-badge-purple',
+  peach: 'ui-badge-peach',
 };
 
 export function Badge({ children, variant = 'neutral', dot, className = '' }: {

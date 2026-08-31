@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, ExternalLink, Clock, Hash, Radio } from 'lucide-react';
+import { Search, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, ExternalLink, Clock, Hash, Radio, Loader2 } from 'lucide-react';
 import { useTrackInfo } from '../hooks/useApi';
 import { Card, Button, Input } from '../components/UI';
-import type { TrackInfo } from '../types';
 
 function formatTime(s: number): string {
   if (!s || !isFinite(s)) return '0:00';
@@ -23,11 +22,16 @@ export default function ApiGround() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
+  const [buffered, setBuffered] = useState(0);
 
   const handleFetch = () => {
     const val = query.trim();
     if (!val) return;
     setActiveId(val);
+    setPlaying(false);
+    setProgress(0);
+    setCurrent(0);
+    setDuration(0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -38,19 +42,35 @@ export default function ApiGround() {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+
     const onTime = () => {
       setCurrent(audio.currentTime);
       setProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0);
     };
     const onMeta = () => setDuration(audio.duration);
     const onEnd = () => setPlaying(false);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onProgress = () => {
+      if (audio.buffered.length > 0) {
+        setBuffered((audio.buffered.end(audio.buffered.length - 1) / audio.duration) * 100);
+      }
+    };
+
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('ended', onEnd);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('progress', onProgress);
+
     return () => {
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('loadedmetadata', onMeta);
       audio.removeEventListener('ended', onEnd);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('progress', onProgress);
     };
   }, [track]);
 
@@ -64,13 +84,16 @@ export default function ApiGround() {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || !track) return;
+
     if (playing) {
       audio.pause();
     } else {
-      audio.src = track.proxyUrl;
-      audio.play();
+      if (!audio.src || audio.src !== window.location.origin + track.proxyUrl) {
+        audio.src = track.proxyUrl;
+        audio.load();
+      }
+      audio.play().catch(() => {});
     }
-    setPlaying(!playing);
   }, [playing, track]);
 
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -82,11 +105,35 @@ export default function ApiGround() {
     }
   };
 
-  const skip = (dir: number) => {
+  const skip = useCallback((seconds: number) => {
     if (audioRef.current) {
-      audioRef.current.currentTime = Math.max(0, Math.min(audioRef.current.duration, audioRef.current.currentTime + dir * 10));
+      const newTime = Math.max(0, Math.min(audioRef.current.duration || 0, audioRef.current.currentTime + seconds));
+      audioRef.current.currentTime = newTime;
     }
-  };
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          skip(-5);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          skip(5);
+          break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [togglePlay, skip]);
 
   return (
     <div style={{ animation: 'fadeIn 0.3s var(--ease)' }}>
@@ -104,7 +151,7 @@ export default function ApiGround() {
               placeholder="Paste YouTube URL, video ID, or any supported link..."
             />
           </div>
-          <Button variant="primary" icon={<Search size={15} />} onClick={handleFetch} disabled={loading}>
+          <Button variant="primary" icon={loading ? <Loader2 size={15} className="spin" /> : <Search size={15} />} onClick={handleFetch} disabled={loading}>
             {loading ? 'Fetching...' : 'Fetch'}
           </Button>
         </div>
@@ -117,14 +164,17 @@ export default function ApiGround() {
       {track && (
         <div className="player-section" style={{ animation: 'slideUp 0.4s var(--ease)' }}>
           <Card className="player-card">
+            {/* Thumbnail + Info */}
             <div className="player-top">
               <div className="player-art">
-                <video src="/logo.mp4" autoPlay loop muted playsInline className="player-art-video" />
+                <img src={track.thumbnail} alt={track.title} className="player-art-img" />
                 <div className="player-art-overlay" />
-                <Music size={32} color="#fff" style={{ position: 'relative', zIndex: 1 }} />
+                <button className="player-art-play" onClick={togglePlay}>
+                  {playing ? <Pause size={24} /> : <Play size={24} style={{ marginLeft: 2 }} />}
+                </button>
               </div>
               <div className="player-info">
-                <div className="player-title">{track.title}</div>
+                <div className="player-title" title={track.title}>{track.title}</div>
                 <div className="player-artist">{track.channel}</div>
                 <div className="player-meta">
                   <span>{track.videoId}</span>
@@ -134,44 +184,56 @@ export default function ApiGround() {
               </div>
             </div>
 
-            {/* Progress */}
-            <div className="progress">
-              <div className="progress-bar" onClick={seek}>
-                <div className="progress-fill" style={{ width: `${progress}%` }} />
+            {/* Progress Bar */}
+            <div className="yt-progress">
+              <div className="yt-progress-bar" onClick={seek}>
+                <div className="yt-progress-buffered" style={{ width: `${buffered}%` }} />
+                <div className="yt-progress-fill" style={{ width: `${progress}%` }} />
+                <div className="yt-progress-thumb" style={{ left: `${progress}%` }} />
               </div>
-              <div className="progress-time">
+              <div className="yt-progress-time">
                 <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration || track.duration)}</span>
+                <span>-{formatTime((duration || track.duration) - currentTime)}</span>
               </div>
             </div>
 
             {/* Controls */}
-            <div className="controls-row">
-              <div className="controls">
-                <button className="ctrl-btn" onClick={() => skip(-1)}><SkipBack size={18} /></button>
-                <button className="ctrl-btn ctrl-play" onClick={togglePlay}>
-                  {playing ? <Pause size={22} /> : <Play size={22} style={{ marginLeft: 2 }} />}
+            <div className="yt-controls">
+              <div className="yt-controls-left">
+                <button className="yt-btn" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
+                  {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" style={{ marginLeft: 1 }} />}
                 </button>
-                <button className="ctrl-btn" onClick={() => skip(1)}><SkipForward size={18} /></button>
+                <button className="yt-btn" onClick={() => skip(-10)} aria-label="Rewind 10s">
+                  <SkipBack size={18} />
+                  <span className="yt-btn-label">10</span>
+                </button>
+                <button className="yt-btn" onClick={() => skip(10)} aria-label="Forward 10s">
+                  <SkipForward size={18} />
+                  <span className="yt-btn-label">10</span>
+                </button>
               </div>
-              <div className="volume">
-                <button className="ctrl-btn ctrl-btn-sm" onClick={() => setMuted(!muted)}>
-                  {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={muted ? 0 : volume}
-                  onChange={(e) => { setVolume(parseFloat(e.target.value)); setMuted(false); }}
-                  className="volume-slider"
-                />
+              <div className="yt-controls-right">
+                <div className="yt-volume">
+                  <button className="yt-btn yt-btn-sm" onClick={() => setMuted(!muted)} aria-label="Volume">
+                    {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  </button>
+                  <div className="yt-volume-slider-wrap">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={muted ? 0 : volume}
+                      onChange={(e) => { setVolume(parseFloat(e.target.value)); setMuted(false); }}
+                      className="yt-volume-slider"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </Card>
 
-          {/* Track details */}
+          {/* Track Details */}
           <div className="page-grid g2" style={{ marginTop: 12 }}>
             <Card>
               <div className="detail-grid">
