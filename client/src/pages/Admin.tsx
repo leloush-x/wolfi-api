@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Settings, Cookie, Trash2, RefreshCw, ToggleLeft, Globe, Cpu, Server, Link, Upload, FileText, Save, Plus, X, Pencil } from 'lucide-react';
 import { useAdmin } from '../hooks/useApi';
 import { Card, CardTitle, Button, Toggle, ListItem, Badge } from '../components/UI';
+import PackageManager from '../components/PackageManager';
 
 export default function Admin() {
   const { data, loading, refresh } = useAdmin(5000);
@@ -197,6 +198,9 @@ export default function Admin() {
           </div>
         </Card>
       </div>
+
+      {/* Package Manager */}
+      <PackageManager />
 
       {/* Env config */}
       <Card style={{ marginBottom: 16 }}>

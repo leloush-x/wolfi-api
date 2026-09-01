@@ -5,6 +5,7 @@
 import { getCacheStats, flushCache, purgeExpiredStreams, getRequestStats, isCacheEnabled, setCacheEnabled } from "../core/cache";
 import { resolver, saveCookies, getCookieInfo, getLatencyStats } from "../core/resolver";
 import { readEnv, writeEnv } from "../core/env";
+import { listPackages, updatePackages } from "../core/packages";
 
 export async function handleAdmin(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -24,6 +25,11 @@ export async function handleAdmin(req: Request): Promise<Response> {
         return json({ ok: true, config: env });
       }
       if (body.action === "get_config") return json({ ok: true, config: readEnv() });
+      if (body.action === "list_packages") { const pkgs = await listPackages(true); return json({ ok: true, packages: pkgs }); }
+      if (body.action === "update_packages") {
+        const result = await updatePackages(body.packages);
+        return json({ ok: true, ...result });
+      }
     } catch { return json({ error: "Invalid request body" }, 400); }
   }
 

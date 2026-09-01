@@ -541,6 +541,29 @@ a:hover { color: var(--accent-hover); }
   display: inline-block;
 }
 
+/* ─── Package Manager ─────────────────────────────────── */
+.pkg-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+.pkg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-radius: var(--radius); cursor: pointer;
+  transition: background 0.15s var(--ease); user-select: none;
+  -webkit-user-select: none; touch-action: manipulation;
+}
+.pkg-row:hover { background: rgba(255,255,255,0.04); }
+.pkg-row.pkg-outdated { border-left: 2px solid var(--peach); }
+.pkg-row.pkg-expanded { background: rgba(255,255,255,0.06); }
+.pkg-info { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 0; }
+.pkg-name { font-size: 13px; font-weight: 500; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+.pkg-badge {
+  font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 400;
+  background: rgba(110,124,255,0.15); color: var(--accent);
+}
+.pkg-versions { display: flex; align-items: center; gap: 6px; font-size: 12px; font-family: var(--mono); color: var(--text-secondary); }
+.pkg-current { color: var(--text-secondary); }
+.pkg-arrow { color: var(--peach); }
+.pkg-latest { color: var(--peach); font-weight: 600; }
+.pkg-actions { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
 /* ─── Responsive ──────────────────────────────────────── */
 @media (max-width: 640px) {
   .g4 { grid-template-columns: repeat(2, 1fr); }
