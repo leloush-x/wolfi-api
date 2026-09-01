@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [react()],
   publicDir: resolve(import.meta.dirname, 'public'),
   cacheDir: resolve(import.meta.dirname, 'node_modules/.vite'),
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   build: {
     outDir: resolve(import.meta.dirname, '../dist/web'),
     emptyOutDir: true,
