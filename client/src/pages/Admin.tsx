@@ -204,7 +204,7 @@ export default function Admin() {
 
       {/* Env config */}
       <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div className="env-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <CardTitle icon={<Settings size={14} />} style={{ marginBottom: 0 }}>Environment Configuration</CardTitle>
           {editingEnv ? (
             <div style={{ display: 'flex', gap: 8 }}>
@@ -221,7 +221,7 @@ export default function Admin() {
         {editingEnv ? (
           <div>
             {Object.entries(envDraft).map(([key, val]) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div key={key} className="env-edit-row" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <input
                   value={key} readOnly
                   style={{
@@ -250,7 +250,7 @@ export default function Admin() {
                 </button>
               </div>
             ))}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            <div className="env-edit-row" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
               <input
                 value={newEnvKey} onChange={(e) => setNewEnvKey(e.target.value)}
                 placeholder="KEY"

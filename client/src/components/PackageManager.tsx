@@ -103,16 +103,16 @@ export default function PackageManager() {
 
   return (
     <Card style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="pkg-header">
+        <div className="pkg-header-left">
           <CardTitle icon={<Package size={14} />} style={{ marginBottom: 0 }}>Packages</CardTitle>
           <Badge variant={outdated.length > 0 ? 'warning' : 'success'} dot>
             {outdated.length > 0 ? `${outdated.length} outdated` : 'All updated'}
           </Badge>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="pkg-header-right">
           <Button icon={<RefreshCw size={14} />} onClick={() => fetchPackages()} disabled={loading}>
-            Refresh
+            <span className="pkg-btn-label">Refresh</span>
           </Button>
           {outdated.length > 0 && (
             <Button
@@ -121,7 +121,7 @@ export default function PackageManager() {
               onClick={updateAll}
               disabled={!!updating}
             >
-              {updating === 'all' ? 'Updating...' : `Update all (${outdated.length})`}
+              {updating === 'all' ? 'Updating...' : <span className="pkg-btn-label">Update all ({outdated.length})</span>}
             </Button>
           )}
         </div>
@@ -198,8 +198,9 @@ export default function PackageManager() {
         </div>
       )}
 
-      <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-tertiary)' }}>
-        Click to expand · Long press to update · {packages.length} packages installed
+      <div className="pkg-footer">
+        <span className="pkg-footer-full">Click to expand · Long press to update · {packages.length} packages installed</span>
+        <span className="pkg-footer-mobile">{packages.length} packages</span>
       </div>
     </Card>
   );
