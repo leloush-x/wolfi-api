@@ -121,6 +121,7 @@ export default function Dashboard() {
             <ListItem left="Runtime" right={`Bun ${system.bunVersion}`} icon={<Activity size={13} />} />
             <ListItem left="Heap" right={system.memory.heapUsed} icon={<HardDrive size={13} />} />
             <ListItem left="Client" right={session.client} icon={<Globe size={13} />} />
+            <ListItem left="Engine" right={`${session.engine} v${session.engineVersion}`} icon={<Cpu size={13} />} />
             <ListItem left="Last ping" right={session.lastPing ? new Date(session.lastPing).toLocaleTimeString() : '—'} icon={<Clock size={13} />} />
           </div>
         </Card>

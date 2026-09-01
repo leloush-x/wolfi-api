@@ -153,7 +153,7 @@ export class InnertubeResolver {
       channel: basic.author ?? basic.channel?.name ?? "Unknown Artist",
       duration: basic.duration ?? 0,
       durationFormatted: formatDuration(basic.duration ?? 0),
-      thumbnail: basic.thumbnail?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+      thumbnail: basic.thumbnail?.thumbnails?.slice(-1)?.[0]?.url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       ytLink: `https://www.youtube.com/watch?v=${videoId}`,
     };
     const expiresAt = parseExpiryFromUrl(res.url) ?? Math.floor(Date.now() / 1000) + 3600;
@@ -172,7 +172,7 @@ export class InnertubeResolver {
     return {
       ready: this.initialized, client: "MWEB", clientVersion: MWEB_CLIENT.clientVersion,
       lastPing: this.lastPingTime ? new Date(this.lastPingTime).toISOString() : null,
-      latencyMs: this.pingLatency, cookieStatus: isCookieFileValid(), cookieInfo: getCookieInfo(), engine: "youtubei.js",
+      latencyMs: this.pingLatency, cookieStatus: isCookieFileValid(), cookieInfo: getCookieInfo(), engine: "youtubei.js", engineVersion: require("youtubei.js/package.json").version,
     };
   }
 }

@@ -23,6 +23,7 @@ export interface AdminData {
     cookieStatus: boolean;
     cookieInfo: { loaded: boolean; cookieCount: number; path: string };
     engine: string;
+    engineVersion: string;
   };
   requests: {
     total: number;
