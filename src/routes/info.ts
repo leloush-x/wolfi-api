@@ -25,7 +25,6 @@ export async function handleInfo(req: Request): Promise<Response> {
 
   const cached = getCachedMeta(videoId);
   if (cached) {
-    // Warm prefetch for next request
     try {
       const cs = getCachedStream(videoId);
       if (cs) prefetchStream(cs.streamUrl, videoId);
@@ -34,6 +33,11 @@ export async function handleInfo(req: Request): Promise<Response> {
           if (a) { setCachedStream(videoId, a.streamUrl, a.expiresAt); prefetchStream(a.streamUrl, videoId); }
         }).catch(() => {});
       }
+    } catch {}
+    try {
+      const host = req.headers.get("host") ?? "localhost:3000";
+      const proto = req.headers.get("x-forwarded-proto") ?? "http";
+      fetch(`${proto}://${host}/saudio/${videoId}?json`).catch(() => {});
     } catch {}
     return json({ videoId: cached.videoId, title: cached.title, channel: cached.channel, duration: cached.duration, durationFormatted: cached.durationFormatted, thumbnail: cached.thumbnail, ytLink: cached.ytLink, streamUrl, proxyUrl, cached: true });
   }
@@ -45,6 +49,11 @@ export async function handleInfo(req: Request): Promise<Response> {
   setCachedMeta(meta);
   setCachedStream(videoId, audio.streamUrl, audio.expiresAt);
   try { prefetchStream(audio.streamUrl, videoId); } catch {}
+  try {
+    const host = req.headers.get("host") ?? "localhost:3000";
+    const proto = req.headers.get("x-forwarded-proto") ?? "http";
+    fetch(`${proto}://${host}/saudio/${videoId}?json`).catch(() => {});
+  } catch {}
 
   return json({ videoId: meta.videoId, title: meta.title, channel: meta.channel, duration: meta.duration, durationFormatted: meta.durationFormatted, thumbnail: meta.thumbnail, ytLink: meta.ytLink, streamUrl, proxyUrl, cached: false });
 }

@@ -98,6 +98,7 @@ export default function ApiGround() {
     setError(null); setPct(0); setCur(0); setDur(0); setPlaying(false); setLoading2(true);
     el.src = track.proxyUrl;
     el.load();
+    fetch(`/saudio/${track.videoId}?json`).catch(() => {});
   }, [track]);
 
   useEffect(() => {
@@ -107,8 +108,26 @@ export default function ApiGround() {
   const togglePlay = useCallback(() => {
     const el = audioRef.current;
     if (!el) return;
-    if (el.paused) { setError(null); el.play().catch(() => setError('Playback blocked — click again or check console')); }
-    else el.pause();
+    if (el.paused) {
+      setError(null);
+      setLoading2(true);
+      const maxRetries = 20;
+      let retries = 0;
+      const tryPlay = () => {
+        el.play().then(() => {}).catch(() => {
+          retries++;
+          if (retries < maxRetries) {
+            setTimeout(tryPlay, 1000);
+          } else {
+            setError('Stream not ready after 20s — try again or check proxy');
+            setLoading2(false);
+          }
+        });
+      };
+      tryPlay();
+    } else {
+      el.pause();
+    }
   }, []);
 
   const seekTo = useCallback((p: number) => {
