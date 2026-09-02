@@ -5,22 +5,12 @@
 import { getCachedStream, setCachedStream, deleteCachedStream, incrementSaudioRequests } from "../core/cache";
 import { resolver } from "../core/resolver";
 import { proxyStream, prefetchStream } from "../core/proxy";
-
-async function retryOn502<T>(
-  res: Response,
-  videoId: string,
-  headers: Headers | Record<string, string>,
-  method: string,
-  reProxy: (streamUrl: string) => Promise<T>
-): Promise<{ res: Response; retried: boolean }> | Promise<T> {
-  // This is a simplified version — saudio uses it inline below
-  return { res, retried: false };
-}
+import { VIDEO_ID_RE } from "../core/extractor";
 
 export async function handleSaudio(req: Request, videoId: string): Promise<Response> {
   incrementSaudioRequests();
 
-  if (!videoId || videoId.length !== 11) return json({ error: "Invalid video ID" }, 400);
+  if (!videoId || !VIDEO_ID_RE.test(videoId)) return json({ error: "Invalid video ID" }, 400);
 
   const url = new URL(req.url);
   const wantsJson = url.searchParams.has("json") || url.searchParams.has("url") || req.headers.get("Accept")?.includes("application/json");

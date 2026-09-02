@@ -3,7 +3,7 @@
  */
 
 import { getCacheStats, flushCache, purgeExpiredStreams, getRequestStats, isCacheEnabled, setCacheEnabled } from "../core/cache";
-import { resolver, saveCookies, getCookieInfo, getLatencyStats } from "../core/resolver";
+import { resolver, saveCookies, getCookieInfo, getLatencyStats, getLatencyHistory } from "../core/resolver";
 import { readEnv, writeEnv } from "../core/env";
 import { listPackages, updatePackages } from "../core/packages";
 
@@ -52,7 +52,7 @@ export async function handleAdmin(req: Request): Promise<Response> {
     },
     session: resolver.getSessionInfo(),
     requests: getRequestStats(),
-    latency: getLatencyStats(),
+    latency: { ...getLatencyStats(), history: getLatencyHistory() },
     cache: getCacheStats(),
     config: readEnv(),
     timestamp: new Date().toISOString(),

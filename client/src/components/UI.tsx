@@ -9,9 +9,9 @@ export function Card({ children, className = '', ...props }: { children: ReactNo
   );
 }
 
-export function CardTitle({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
+export function CardTitle({ children, icon, ...props }: { children: ReactNode; icon?: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="ui-card-title">
+    <div className="ui-card-title" {...props}>
       {icon && <span className="ui-card-title-icon">{icon}</span>}
       {children}
     </div>

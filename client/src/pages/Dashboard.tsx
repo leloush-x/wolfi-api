@@ -3,17 +3,13 @@ import { useAdmin } from '../hooks/useApi';
 import { Card, CardTitle, StatCard, Badge, ListItem } from '../components/UI';
 import { LineChart, BarChart, DonutChart } from '../components/Charts';
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-}
+const memHistoryRef: number[] = [];
 
 function memHistory(bytes: number): number[] {
   const base = bytes / (1024 * 1024);
-  return Array.from({ length: 20 }, (_, i) => base + Math.sin(i * 0.5) * 0.8 + (Math.random() - 0.5) * 0.4);
+  memHistoryRef.push(base);
+  if (memHistoryRef.length > 20) memHistoryRef.shift();
+  return [...memHistoryRef];
 }
 
 export default function Dashboard() {
@@ -30,6 +26,13 @@ export default function Dashboard() {
   }
 
   const { system, session, requests, latency, cache } = data;
+
+  const latencyData = latency.history.length > 1
+    ? latency.history.map((h) => h.latencyMs)
+    : latency.count > 0
+      ? Array(12).fill(latency.avg)
+      : Array(12).fill(0);
+
   const memHist = memHistory(system.memory.rssBytes);
 
   return (
@@ -65,7 +68,7 @@ export default function Dashboard() {
       <div className="page-grid g2" style={{ marginBottom: 16 }}>
         <Card>
           <CardTitle icon={<BarChart3 size={14} />}>Latency</CardTitle>
-          <LineChart data={latency.count > 0 ? Array.from({ length: 12 }, () => latency.avg + (Math.random() - 0.5) * latency.avg * 0.4) : Array(12).fill(0)} color="var(--accent)" />
+          <LineChart data={latencyData} color="var(--accent)" />
           <div className="chart-footer">
             <span>min {latency.min}ms</span>
             <span>p95 {latency.p95}ms</span>

@@ -70,6 +70,11 @@ export function getLatencyStats() {
   };
 }
 
+export function getLatencyHistory(): { timestamp: number; latencyMs: number; videoId: string }[] {
+  const now = Date.now();
+  return latencyHistory.filter((l) => now - l.timestamp < 3_600_000);
+}
+
 interface ResolvedAudio { streamUrl: string; expiresAt: number; }
 
 // ─── youtubei.js singleton ────────────────────────────────────

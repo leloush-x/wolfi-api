@@ -6,8 +6,10 @@ export function LineChart({ data, color = 'var(--accent)', height = 140 }: {
 }) {
   const w = 400;
   const h = height;
+  if (data.length === 0) return <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: h }} />;
   const max = Math.max(...data) * 1.2 || 1;
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * h}`).join(' ');
+  const divisor = Math.max(data.length - 1, 1);
+  const pts = data.map((v, i) => `${(i / divisor) * w},${h - (v / max) * h}`).join(' ');
   const area = `0,${h} ${pts} ${w},${h}`;
   const gradId = `lg-${color.replace(/[^a-z0-9]/gi, '')}`;
 
@@ -22,7 +24,7 @@ export function LineChart({ data, color = 'var(--accent)', height = 140 }: {
       <path d={`M0,${h} ${pts} ${w},${h}`} fill={`url(#${gradId})`} />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       {data.map((v, i) => (
-        <circle key={i} cx={(i / (data.length - 1)) * w} cy={h - (v / max) * h} r="2.5" fill={color} />
+        <circle key={i} cx={(i / divisor) * w} cy={h - (v / max) * h} r="2.5" fill={color} />
       ))}
     </svg>
   );
@@ -67,6 +69,14 @@ export function DonutChart({ values, colors, size = 110 }: {
   const r = 42;
   const c = size / 2;
   const total = values.reduce((a, b) => a + b, 0);
+  if (total === 0) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--border)" strokeWidth="12" />
+        <circle cx={c} cy={c} r={r - 18} fill="var(--bg-card)" />
+      </svg>
+    );
+  }
   let acc = 0;
 
   const arcs = values.map((v, i) => {

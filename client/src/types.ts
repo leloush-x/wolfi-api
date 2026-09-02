@@ -37,6 +37,7 @@ export interface AdminData {
     max: number;
     p95: number;
     count: number;
+    history: { timestamp: number; latencyMs: number; videoId: string }[];
   };
   cache: {
     enabled: boolean;

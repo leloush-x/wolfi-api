@@ -8,7 +8,7 @@ import { join } from "path";
 const DB_PATH = join(import.meta.dir, "../../cache.sqlite");
 
 const META_TTL = 7 * 24 * 60 * 60;
-const STREAM_SAFETY_BUFFER = 10 * 60;
+const STREAM_FIXED_TTL = 3 * 60 * 60;
 
 // ─── Cache Toggle ──────────────────────────────────────────────
 let cacheEnabled = true;
@@ -143,10 +143,10 @@ export function getCachedStream(videoId: string): CachedStream | null {
   return null;
 }
 
-export function setCachedStream(videoId: string, streamUrl: string, expiresAt: number): void {
+export function setCachedStream(videoId: string, streamUrl: string, _expiresAt: number): void {
   if (!cacheEnabled) return;
   const now = Math.floor(Date.now() / 1000);
-  insertStream.run(videoId, streamUrl, now, expiresAt - STREAM_SAFETY_BUFFER);
+  insertStream.run(videoId, streamUrl, now, now + STREAM_FIXED_TTL);
 }
 
 export function parseExpiryFromUrl(url: string): number | null {

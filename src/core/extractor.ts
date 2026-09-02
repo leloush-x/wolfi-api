@@ -8,7 +8,7 @@ export type ExtractResult =
   | { ok: false; error: string };
 
 // Matches exactly 11 chars: alphanumeric, hyphens, underscores
-const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+export const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
 // URL patterns mapped to capture group index for the video ID
 const URL_PATTERNS: { re: RegExp; group: number }[] = [

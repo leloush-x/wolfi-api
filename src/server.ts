@@ -81,6 +81,9 @@ const server = Bun.serve({
 
     // ── Static Assets ────────────────────────────────────
     let filePath = join(WEB_DIST, pathname === "/" ? "index.html" : pathname);
+    if (!filePath.startsWith(WEB_DIST)) {
+      return new Response("Forbidden", { status: 403 });
+    }
     if (existsSync(filePath)) {
       const ext = "." + filePath.split(".").pop();
       const mime = MIME_TYPES[ext] ?? "application/octet-stream";

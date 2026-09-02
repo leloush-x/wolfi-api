@@ -122,6 +122,7 @@ function vidKey(url: string): string {
 
 export function prefetchStream(url: string, videoId: string): void {
   const key = videoId || vidKey(url);
+  prunePrefetch();
   const e = prefetched.get(key);
   if (e && Date.now() - e.ts < PREFETCH_TTL) return;
   const h = buildUpstreamAuth({ Range: `bytes=0-${INITIAL_CHUNK}` });
@@ -147,6 +148,13 @@ function consumePrefetch(key: string): PrefetchEntry | null {
   prefetched.delete(key);
   if (Date.now() - e.ts > PREFETCH_TTL) return null;
   return e;
+}
+
+function prunePrefetch(): void {
+  const now = Date.now();
+  for (const [k, v] of prefetched) {
+    if (now - v.ts > PREFETCH_TTL) prefetched.delete(k);
+  }
 }
 
 export function clearPrefetch(): number {
@@ -194,7 +202,7 @@ export async function proxyStream(
     return new Response(null, { status: 200, headers: h });
   }
 
-  const { start, end, label } = resolveWindow(clientRangeRaw);
+  const { start, end: _end, label } = resolveWindow(clientRangeRaw);
 
   // Serve prefetched chunk instantly for a true first load (no Range)
   if (!clientRangeRaw) {
