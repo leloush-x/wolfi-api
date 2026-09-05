@@ -1,4 +1,5 @@
 import { type ReactNode, type ButtonHTMLAttributes } from 'react';
+import { TriangleAlert } from 'lucide-react';
 
 /* ─── Card ──────────────────────────────────────────── */
 export function Card({ children, className = '', ...props }: { children: ReactNode; className?: string } & React.HTMLAttributes<HTMLDivElement>) {
@@ -126,4 +127,24 @@ export function Input({ icon, ...props }: { icon?: ReactNode } & React.InputHTML
 /* ─── Skeleton ──────────────────────────────────────── */
 export function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`ui-skeleton ${className}`} />;
+}
+
+/* ─── Error state (full-page load failure) ────────────── */
+export function ErrorState({ title, message, action }: {
+  title: string;
+  message?: string | null;
+  action?: ReactNode;
+}) {
+  return (
+    <Card>
+      <div className="error-state">
+        <div className="alert-row">
+          <TriangleAlert size={16} />
+          <span>{title}</span>
+        </div>
+        {message && <div className="error-state-msg">{message}</div>}
+        {action && <div className="error-state-action">{action}</div>}
+      </div>
+    </Card>
+  );
 }

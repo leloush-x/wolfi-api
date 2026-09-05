@@ -11,6 +11,21 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** Friendly message for common failures (raw "API 401: …" means nothing to users). */
+export function friendlyError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/API 401/.test(msg)) return 'Unauthorized (401) — this server requires an admin token.';
+  if (/Failed to fetch|NetworkError|Load failed/.test(msg)) {
+    return 'Network error — is the server running and reachable?';
+  }
+  return msg;
+}
+
+/** True when the failure is an auth lock (show the token unlock UI). */
+export function isAuthError(msg: string | null): boolean {
+  return !!msg && /401|unauthorized/i.test(msg);
+}
+
 /**
  * Visibility-aware polling: pauses when the tab is hidden (idle-light),
  * resumes on focus. In-flight requests are aborted on unmount — no
@@ -33,7 +48,7 @@ export function useAdmin(pollInterval = 5000) {
       setError(null);
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
-      setError(e.message);
+      setError(friendlyError(e));
     } finally {
       if (!ctrl.signal.aborted) setLoading(false);
     }
@@ -75,7 +90,7 @@ export function useTrackInfo(videoId: string | null) {
         }
       })
       .catch((e) => {
-        if (!cancelled && e?.name !== 'AbortError') setError(e.message);
+        if (!cancelled && e?.name !== 'AbortError') setError(friendlyError(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

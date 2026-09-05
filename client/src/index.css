@@ -574,6 +574,9 @@ a:hover { color: var(--accent-hover); }
 .row-value > span:first-child { flex: 1; min-width: 0; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alert-row { display: flex; align-items: center; gap: 8px; color: var(--danger); font-size: 13px; font-weight: 500; }
+.error-state { display: flex; flex-direction: column; gap: 10px; }
+.error-state-msg { font-size: 13px; color: var(--text-secondary); word-break: break-word; }
+.error-state-action { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 
 /* ── 14 Responsive ────────────────────────────────────── */
 @media (max-width: 640px) {

@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react';
 import { Settings, Cookie, Trash2, RefreshCw, ToggleLeft, Globe, Cpu, Server, Link, Upload, FileText, Save, Plus, X, Pencil, KeyRound, ShieldCheck, ShieldAlert, Copy, Check, Flame, TriangleAlert } from 'lucide-react';
-import { useAdmin } from '../hooks/useApi';
+import { useAdmin, isAuthError } from '../hooks/useApi';
 import { useCopy } from '../hooks/useCopy';
 import { getToken, setToken, authHeaders } from '../utils/auth';
-import { Card, CardTitle, Button, Toggle, ListItem, Badge, Input } from '../components/UI';
+import { Card, CardTitle, Button, Toggle, ListItem, Badge, Input, ErrorState } from '../components/UI';
 import PackageManager from '../components/PackageManager';
 
 export default function Admin() {
@@ -129,6 +129,44 @@ export default function Admin() {
   };
 
   if (loading || !data) {
+    // Error with no data (e.g. 401 locked, server down) → error card with
+    // inline unlock, NEVER an endless skeleton. This was the stuck bug.
+    if (!loading && !data) {
+      const locked = isAuthError(error);
+      return (
+        <div className="anim-fade" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <ErrorState
+            title="Couldn't load admin status"
+            message={error ?? 'Unknown error'}
+            action={
+              <Button icon={<RefreshCw size={14} />} onClick={refresh}>
+                Retry
+              </Button>
+            }
+          />
+          {locked && (
+            <Card>
+              <CardTitle icon={<KeyRound size={14} />}>Unlock with admin token</CardTitle>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <Input
+                    icon={<KeyRound size={14} />}
+                    type="password"
+                    value={tokenDraft}
+                    onChange={(e) => setTokenDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveToken()}
+                    placeholder="Enter admin token…"
+                  />
+                </div>
+                <Button variant="primary" icon={<Save size={14} />} onClick={saveToken} disabled={!tokenDraft.trim()}>
+                  Unlock
+                </Button>
+              </div>
+            </Card>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="page-grid g2">
         {[1, 2].map((i) => (

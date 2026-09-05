@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   Activity, Database, Clock, Cpu, HardDrive, BarChart3, Zap, Globe,
-  ShieldCheck, ShieldAlert, Flame, Hourglass,
+  ShieldCheck, ShieldAlert, Flame, Hourglass, RefreshCw,
 } from 'lucide-react';
-import { useAdmin } from '../hooks/useApi';
-import { Card, CardTitle, StatCard, Badge, ListItem } from '../components/UI';
+import { useAdmin, isAuthError } from '../hooks/useApi';
+import { Card, CardTitle, StatCard, Badge, ListItem, Button, ErrorState } from '../components/UI';
 import { LineChart, BarChart, DonutChart } from '../components/Charts';
 
 const MEM_MAX = 20;
@@ -16,7 +16,7 @@ function startedLabel(iso: string): string {
 }
 
 export default function Dashboard() {
-  const { data, loading } = useAdmin(5000);
+  const { data, loading, error, refresh } = useAdmin(5000);
   const [memHist, setMemHist] = useState<number[]>([]);
 
   // Append memory sample per poll (effect, not render — no ref-during-render).
@@ -25,6 +25,28 @@ export default function Dashboard() {
     if (typeof rssBytes !== 'number') return;
     setMemHist((prev) => [...prev, rssBytes / (1024 * 1024)].slice(-MEM_MAX));
   }, [rssBytes]);
+
+  // Error with no data (e.g. 401 locked, server down) → error card, NEVER
+  // an endless skeleton. This was the "stuck on loading" bug.
+  if (!loading && !data) {
+    return (
+      <div className="anim-fade">
+        <ErrorState
+          title="Couldn't load dashboard"
+          message={
+            isAuthError(error)
+              ? 'This server is locked with an admin token. Open the Admin tab and enter the token to unlock.'
+              : (error ?? 'Unknown error')
+          }
+          action={
+            <Button icon={<RefreshCw size={14} />} onClick={refresh}>
+              Retry
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   if (loading || !data) {
     return (
