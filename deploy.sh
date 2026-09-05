@@ -7,8 +7,8 @@ rm -rf dist
 echo "Building frontend..."
 bun x vite build --config client/vite.config.ts
 
-echo "Staging dist..."
-git add dist/
+echo "Staging dist... (dist/ is gitignored, force-add is required)"
+git add -f dist/
 
 echo "Committing..."
 git commit -m "chore: rebuild dist $(date +%Y-%m-%d_%H:%M)" || echo "Nothing to commit"

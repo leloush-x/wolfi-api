@@ -1,6 +1,6 @@
 {
   "name": "wolfie",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "YouTube audio proxy powered by InnerTube MWEB",
   "type": "module",
   "scripts": {
@@ -22,7 +22,6 @@
     "lucide-react": "^1.38.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "recharts": "^3.10.1",
     "youtubei.js": "18.0.0"
   },
   "devDependencies": {

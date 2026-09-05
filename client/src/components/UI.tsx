@@ -54,13 +54,14 @@ const BTN_CLASSES: Record<ButtonVariant, string> = {
   ghost: 'ui-btn ui-btn-ghost',
 };
 
-export function Button({ children, variant = 'default', icon, ...props }: {
+export function Button({ children, variant = 'default', size, icon, ...props }: {
   children?: ReactNode;
   variant?: ButtonVariant;
+  size?: 'sm' | 'md';
   icon?: ReactNode;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button className={`${BTN_CLASSES[variant]} ${props.className ?? ''}`} {...props}>
+    <button className={`${BTN_CLASSES[variant]} ${size === 'sm' ? 'ui-btn-sm' : ''} ${props.className ?? ''}`} {...props}>
       {icon && <span className="ui-btn-icon">{icon}</span>}
       {children}
     </button>

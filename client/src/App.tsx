@@ -29,14 +29,15 @@ export default function App() {
             <span className="brand-ver">v2.0</span>
           </div>
         </div>
-        <nav className="nav">
+        <nav className="nav" aria-label="Primary">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               className={`nav-btn ${active === id ? 'nav-btn-active' : ''}`}
               onClick={() => setActive(id)}
+              aria-current={active === id ? 'page' : undefined}
             >
-              <Icon size={16} />
+              <Icon size={16} aria-hidden />
               {label}
             </button>
           ))}

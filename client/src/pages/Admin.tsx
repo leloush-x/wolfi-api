@@ -1,15 +1,20 @@
 import { useState, useRef } from 'react';
-import { Settings, Cookie, Trash2, RefreshCw, ToggleLeft, Globe, Cpu, Server, Link, Upload, FileText, Save, Plus, X, Pencil } from 'lucide-react';
+import { Settings, Cookie, Trash2, RefreshCw, ToggleLeft, Globe, Cpu, Server, Link, Upload, FileText, Save, Plus, X, Pencil, KeyRound, ShieldCheck, ShieldAlert, Copy, Check, Flame, TriangleAlert } from 'lucide-react';
 import { useAdmin } from '../hooks/useApi';
-import { Card, CardTitle, Button, Toggle, ListItem, Badge } from '../components/UI';
+import { useCopy } from '../hooks/useCopy';
+import { getToken, setToken, authHeaders } from '../utils/auth';
+import { Card, CardTitle, Button, Toggle, ListItem, Badge, Input } from '../components/UI';
 import PackageManager from '../components/PackageManager';
 
 export default function Admin() {
-  const { data, loading, refresh } = useAdmin(5000);
+  const { data, loading, error, refresh } = useAdmin(5000);
   const [showPaste, setShowPaste] = useState(false);
   const [pasteContent, setPasteContent] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [tokenDraft, setTokenDraft] = useState(getToken());
   const fileRef = useRef<HTMLInputElement>(null);
+  const { copied, copy } = useCopy();
 
   // Env config editing
   const [editingEnv, setEditingEnv] = useState(false);
@@ -19,16 +24,39 @@ export default function Admin() {
   const [saving, setSaving] = useState(false);
 
   const postAction = async (action: string, body?: Record<string, any>) => {
+    setActionError(null);
     try {
-      await fetch('/admin', {
+      const res = await fetch('/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ action, ...body }),
       });
+      if (res.status === 401) {
+        setActionError('Unauthorized — enter the admin token below.');
+        return;
+      }
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        setActionError(`Action failed (${res.status}): ${text.slice(0, 160)}`);
+        return;
+      }
       refresh();
     } catch (e) {
       console.error(e);
+      setActionError('Network error — is the server running?');
     }
+  };
+
+  const saveToken = () => {
+    setToken(tokenDraft.trim());
+    setActionError(null);
+    refresh();
+  };
+
+  const clearToken = () => {
+    setTokenDraft('');
+    setToken('');
+    refresh();
   };
 
   const toggleCache = () => postAction('toggle_cache', { enabled: !data?.cache.enabled });
@@ -110,10 +138,21 @@ export default function Admin() {
     );
   }
 
-  const { session, cache, config, system } = data;
+  const { session, cache, config } = data;
+  const warmed = session.warmed ?? session.ready;
+  const yt = session.ytConcurrency;
+  const previewUrl = `${config.ADDRESS_URL || 'http://0.0.0.0:3000'}/saudio/{videoId}`;
 
   return (
-    <div style={{ animation: 'fadeIn 0.3s var(--ease)' }}>
+    <div className="anim-fade">
+      {(actionError || error) && (
+        <Card style={{ marginBottom: 16, borderColor: 'var(--danger)' }}>
+          <div className="alert-row">
+            <TriangleAlert size={15} />
+            <span>{actionError ?? `Status poll failed: ${error}`}</span>
+          </div>
+        </Card>
+      )}
       <div className="page-grid g2" style={{ marginBottom: 16 }}>
         {/* Control panel */}
         <Card>
@@ -130,6 +169,8 @@ export default function Admin() {
                 <Toggle on={cache.enabled} onToggle={toggleCache} />
               </div>
             </div>
+            <ListItem left="Session" right={warmed ? 'Warmed' : 'Warming…'} icon={<Flame size={13} />} />
+            <ListItem left="YT pool" right={yt ? `${yt.active}/${yt.max} · ${yt.queued} queued` : '—'} icon={<Cpu size={13} />} />
             <ListItem left="Cookies" right={`${session.cookieInfo.cookieCount} loaded`} icon={<Cookie size={13} />} />
             <ListItem left="Public URL" right={config.ADDRESS_URL || 'http://0.0.0.0:3000'} icon={<Globe size={13} />} />
             <ListItem left="Port" right={config.PORT || '3000'} icon={<Server size={13} />} />
@@ -198,6 +239,47 @@ export default function Admin() {
           </div>
         </Card>
       </div>
+
+      {/* Security */}
+      <Card style={{ marginBottom: 16 }}>
+        <CardTitle icon={<KeyRound size={14} />}>Security</CardTitle>
+        <div className="ui-list" style={{ marginBottom: 12 }}>
+          <ListItem
+            left="Admin API"
+            right={
+              data.auth === 'locked'
+                ? <Badge variant="accent" dot><ShieldCheck size={11} /> Locked</Badge>
+                : <Badge variant="warning" dot><ShieldAlert size={11} /> Open</Badge>
+            }
+            icon={<ShieldCheck size={13} />}
+          />
+        </div>
+        {data.auth === 'locked' ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <Input
+                icon={<KeyRound size={14} />}
+                type="password"
+                value={tokenDraft}
+                onChange={(e) => setTokenDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveToken()}
+                placeholder="Enter admin token…"
+              />
+            </div>
+            <Button variant="primary" icon={<Save size={14} />} onClick={saveToken} disabled={!tokenDraft.trim()}>
+              Save
+            </Button>
+            {getToken() && (
+              <Button icon={<X size={14} />} onClick={clearToken}>Clear</Button>
+            )}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            No <code className="inline-code">ADMIN_TOKEN</code> set — admin actions are open.
+            Set one in the server environment to lock this panel.
+          </div>
+        )}
+      </Card>
 
       {/* Package Manager */}
       <PackageManager />
@@ -291,8 +373,11 @@ export default function Admin() {
       {/* Stream URL preview */}
       <Card>
         <CardTitle icon={<Link size={14} />}>Stream URL Preview</CardTitle>
-        <div className="url-box">
-          {config.ADDRESS_URL || 'http://0.0.0.0:3000'}/saudio/{'{videoId}'}
+        <div className="url-box row-value">
+          <span className="truncate">{previewUrl}</span>
+          <button className="icon-btn" onClick={() => copy(previewUrl)} aria-label="Copy stream URL template" title="Copy">
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+          </button>
         </div>
         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>
           Replace <code className="inline-code">{'{videoId}'}</code> with any YouTube video ID.

@@ -1,7 +1,11 @@
 export interface AdminData {
+  service: string;
+  version: string;
+  auth: 'open' | 'locked';
   system: {
     uptime: string;
     uptimeSeconds: number;
+    startedAt: string;
     memory: {
       rss: string;
       heapUsed: string;
@@ -16,6 +20,7 @@ export interface AdminData {
   };
   session: {
     ready: boolean;
+    warmed?: boolean;
     client: string;
     clientVersion: string;
     lastPing: string | null;
@@ -24,6 +29,7 @@ export interface AdminData {
     cookieInfo: { loaded: boolean; cookieCount: number; path: string };
     engine: string;
     engineVersion: string;
+    ytConcurrency?: { active: number; queued: number; max: number; maxSeen: number };
   };
   requests: {
     total: number;
@@ -31,6 +37,7 @@ export interface AdminData {
     saudio: number;
     rate: { perMinute: number; perHour: number };
   };
+  inflight?: number;
   latency: {
     avg: number;
     min: number;
@@ -52,6 +59,7 @@ export interface AdminData {
       streams: { hits: number; misses: number; ratio: string };
     };
   };
+  cacheEnabled?: boolean;
   config: Record<string, string>;
   timestamp: string;
 }

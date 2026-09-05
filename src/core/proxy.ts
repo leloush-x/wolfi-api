@@ -1,90 +1,41 @@
 /**
  * proxy.ts — smooth seek, dynamic load (YouTube Music style)
- * v2: windowed range chunking, fixed prefetch cache key, short-lived
- *     exact-range cache for scrub-back-and-forth, network-error retry.
+ * v3: cookies/constants centralized, retry with backoff, contract unchanged.
  *
  * Public contract unchanged: same status codes, same headers exposed,
  * same call shape from routes/saudio.ts.
  */
 
-const YT_AGENT = "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36";
-import { readFileSync, watch } from "fs";
-import { join } from "path";
-import { createHash } from "crypto";
-const COOKIE_PATH = join(import.meta.dir, "../../cookies.txt");
-
-// ─── Cached cookie parsing (single disk read, invalidated on file change) ──
-let _cookieStr = "";
-let _cookieMap = new Map<string, string>();
-let _cookieMtime = 0;
-
-function reloadCookies(): void {
-  try {
-    const stat = require("fs").statSync(COOKIE_PATH);
-    const mt = stat.mtimeMs;
-    if (mt === _cookieMtime) return;
-    _cookieMtime = mt;
-    const raw = readFileSync(COOKIE_PATH, "utf-8");
-    const pairs: string[] = [];
-    const map = new Map<string, string>();
-    for (const line of raw.split("\n")) {
-      if (line.startsWith("#") || !line.trim()) continue;
-      const p = line.split("\t");
-      if (p.length >= 7) {
-        pairs.push(`${p[5]}=${p[6]}`);
-        map.set(p[5], p[6]);
-      }
-    }
-    _cookieStr = pairs.join("; ");
-    _cookieMap = map;
-  } catch {
-    _cookieStr = "";
-    _cookieMap = new Map();
-    _cookieMtime = 0;
-  }
-}
-
-// Watch for cookie file changes (debounced)
-let _cookieTimer: Timer | null = null;
-try {
-  watch(COOKIE_PATH, () => {
-    if (_cookieTimer) clearTimeout(_cookieTimer);
-    _cookieTimer = setTimeout(reloadCookies, 500);
-  });
-} catch {}
-
-// Initial load
-reloadCookies();
-
-function getCookieStr(): string { reloadCookies(); return _cookieStr; }
-function getCookieVal(name: string): string | null { reloadCookies(); return _cookieMap.get(name) ?? null; }
-
-function getSapisidHash(): string | null {
-  const sapisid = getCookieVal("SAPISID") || getCookieVal("__Secure-3PAPISID") || getCookieVal("__Secure-1PAPISID");
-  if (!sapisid) return null;
-  const ts = Math.floor(Date.now() / 1000);
-  const hash = createHash("sha1").update(`${ts} ${sapisid} https://www.youtube.com`).digest("hex");
-  return `${ts}_${hash}`;
-}
+import {
+  INITIAL_CHUNK,
+  WINDOW_CHUNK,
+  MAX_CLIENT_SPAN,
+  PREFETCH_TTL_MS,
+  RANGE_CACHE_TTL_MS,
+  RANGE_CACHE_MAX,
+  PREFETCH_TIMEOUT_MS,
+  UPSTREAM_TIMEOUT_MS,
+  HEAD_PROBE_TIMEOUT_MS,
+  YT_AGENT,
+} from "./constants";
+import { getCookieHeader, getCookieVal, getSapisidHash } from "./cookies";
 
 /** Build standard YT upstream headers (cookies + SAPISIDHASH + visitor ID). */
 function buildUpstreamAuth(extra?: Record<string, string>): Record<string, string> {
   const h: Record<string, string> = { "User-Agent": YT_AGENT, ...extra };
-  const cookies = getCookieStr();
+  const cookies = getCookieHeader();
   if (cookies) h["Cookie"] = cookies;
   const sh = getSapisidHash();
-  if (sh) { h["Authorization"] = `SAPISIDHASH ${sh}`; h["X-Goog-AuthUser"] = "0"; }
+  if (sh) {
+    h["Authorization"] = `SAPISIDHASH ${sh}`;
+    h["X-Goog-AuthUser"] = "0";
+  }
   const vis = getCookieVal("VISITOR_INFO1_LIVE");
   if (vis) h["X-Goog-Visitor-Id"] = vis;
   return h;
 }
 
-// ─── Chunk windowing ────────────────────────────────────────────
-const INITIAL_CHUNK = 512 * 1024;
-const WINDOW_CHUNK = 4 * 1024 * 1024;
-const MAX_CLIENT_SPAN = 8 * 1024 * 1024;
-
-// ─── Prefetch cache ─────────────────────────────────────────────
+// ─── Prefetch cache ─────────────────────────────────────────
 interface PrefetchEntry {
   ts: number;
   body: ReadableStream | null;
@@ -94,13 +45,15 @@ interface PrefetchEntry {
   contentRange: string | null;
 }
 const prefetched = new Map<string, PrefetchEntry>();
-const PREFETCH_TTL = 10_000;
 
-// ─── Short-lived exact-range cache ─────────────────────────────
-interface RangeEntry { ts: number; status: number; headers: Record<string, string>; body: ArrayBuffer; }
+// ─── Short-lived exact-range cache ──────────────────────────
+interface RangeEntry {
+  ts: number;
+  status: number;
+  headers: Record<string, string>;
+  body: ArrayBuffer;
+}
 const rangeCache = new Map<string, RangeEntry>();
-const RANGE_CACHE_TTL = 8_000;
-const RANGE_CACHE_MAX = 12;
 
 function rangeCacheKey(id: string, range: string): string {
   return `${id}::${range}`;
@@ -111,9 +64,19 @@ function pruneRangeCache(): void {
   let oldestKey = "";
   let oldestTs = Infinity;
   for (const [k, v] of rangeCache) {
-    if (v.ts < oldestTs) { oldestTs = v.ts; oldestKey = k; }
+    if (v.ts < oldestTs) {
+      oldestTs = v.ts;
+      oldestKey = k;
+    }
   }
   if (oldestKey) rangeCache.delete(oldestKey);
+}
+
+function pruneRangeExpired(): void {
+  const now = Date.now();
+  for (const [k, v] of rangeCache) {
+    if (now - v.ts > RANGE_CACHE_TTL_MS) rangeCache.delete(k);
+  }
 }
 
 function vidKey(url: string): string {
@@ -124,9 +87,9 @@ export function prefetchStream(url: string, videoId: string): void {
   const key = videoId || vidKey(url);
   prunePrefetch();
   const e = prefetched.get(key);
-  if (e && Date.now() - e.ts < PREFETCH_TTL) return;
+  if (e && Date.now() - e.ts < PREFETCH_TTL_MS) return;
   const h = buildUpstreamAuth({ Range: `bytes=0-${INITIAL_CHUNK}` });
-  fetch(url, { headers: h, signal: AbortSignal.timeout(8000) })
+  fetch(url, { headers: h, signal: AbortSignal.timeout(PREFETCH_TIMEOUT_MS) })
     .then((r) => {
       if (r.ok || r.status === 206) {
         prefetched.set(key, {
@@ -146,14 +109,14 @@ function consumePrefetch(key: string): PrefetchEntry | null {
   const e = prefetched.get(key);
   if (!e) return null;
   prefetched.delete(key);
-  if (Date.now() - e.ts > PREFETCH_TTL) return null;
+  if (Date.now() - e.ts > PREFETCH_TTL_MS) return null;
   return e;
 }
 
 function prunePrefetch(): void {
   const now = Date.now();
   for (const [k, v] of prefetched) {
-    if (now - v.ts > PREFETCH_TTL) prefetched.delete(k);
+    if (now - v.ts > PREFETCH_TTL_MS) prefetched.delete(k);
   }
 }
 
@@ -171,15 +134,20 @@ function resolveWindow(clientRange: string | null): { start: number; end: number
   if (!m) return { start: -1, end: -1, label: clientRange };
   const start = parseInt(m[1], 10);
   const explicitEnd = m[2] ? parseInt(m[2], 10) : null;
-  const end = explicitEnd !== null ? Math.min(explicitEnd, start + MAX_CLIENT_SPAN) : start + WINDOW_CHUNK;
+  const end =
+    explicitEnd !== null
+      ? Math.min(explicitEnd, start + MAX_CLIENT_SPAN)
+      : start + WINDOW_CHUNK;
   return { start, end, label: `bytes=${start}-${end}` };
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function proxyStream(
   upstreamUrl: string,
   headers: Headers,
-  method: string = "GET",
-  videoId?: string
+  method = "GET",
+  videoId?: string,
 ): Promise<Response> {
   const cacheKey = videoId || vidKey(upstreamUrl);
   const clientRangeRaw = headers.get("Range") ?? headers.get("range");
@@ -195,7 +163,7 @@ export async function proxyStream(
     if (existing?.contentType) h.set("Content-Type", existing.contentType);
     if (!existing) {
       const hh = buildUpstreamAuth({ Range: "bytes=0-0" });
-      fetch(upstreamUrl, { headers: hh, signal: AbortSignal.timeout(5000) })
+      fetch(upstreamUrl, { headers: hh, signal: AbortSignal.timeout(HEAD_PROBE_TIMEOUT_MS) })
         .then((r) => r.arrayBuffer())
         .catch(() => {});
     }
@@ -224,9 +192,10 @@ export async function proxyStream(
   }
 
   // Short-lived exact-range cache
+  pruneRangeExpired();
   const rKey = rangeCacheKey(cacheKey, label);
   const cachedRange = rangeCache.get(rKey);
-  if (cachedRange && Date.now() - cachedRange.ts < RANGE_CACHE_TTL) {
+  if (cachedRange && Date.now() - cachedRange.ts < RANGE_CACHE_TTL_MS) {
     const h = new Headers(cachedRange.headers);
     h.set("Access-Control-Allow-Origin", "*");
     return new Response(cachedRange.body.slice(0), { status: cachedRange.status, headers: h });
@@ -248,7 +217,7 @@ export async function proxyStream(
       method: "GET",
       headers: rh,
       keepalive: true,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     } as any);
   };
 
@@ -257,6 +226,8 @@ export async function proxyStream(
     try {
       upstream = await doFetch(label);
     } catch {
+      // Single backoff retry — not a hot loop. Transient RST/timeout recovery.
+      await sleep(350 + Math.random() * 250);
       upstream = await doFetch(label);
     }
 
@@ -264,16 +235,26 @@ export async function proxyStream(
       const altStart = start >= 0 ? start : 0;
       const alt = `bytes=${altStart}-${altStart + INITIAL_CHUNK}`;
       try {
-        const retry = await doFetch(alt);
-        if (retry.ok || retry.status === 206) upstream = retry;
-      } catch {}
+        await sleep(300);
+        const retryRes = await doFetch(alt);
+        if (retryRes.ok || retryRes.status === 206) upstream = retryRes;
+      } catch {
+        /* keep original */
+      }
     }
 
     if (!upstream.ok && upstream.status !== 206) {
-      return new Response(JSON.stringify({ error: "upstream_stream_failed", status: upstream.status, retryable: upstream.status === 403 }), {
-        status: 502,
-        headers: { "content-type": "application/json", "Access-Control-Allow-Origin": "*" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "upstream_stream_failed",
+          status: upstream.status,
+          retryable: upstream.status === 403,
+        }),
+        {
+          status: 502,
+          headers: { "content-type": "application/json", "Access-Control-Allow-Origin": "*" },
+        },
+      );
     }
 
     const h = new Headers({ "Accept-Ranges": "bytes" });

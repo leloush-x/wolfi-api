@@ -3,12 +3,7 @@
  */
 
 import { Database } from "bun:sqlite";
-import { join } from "path";
-
-const DB_PATH = join(import.meta.dir, "../../cache.sqlite");
-
-const META_TTL = 7 * 24 * 60 * 60;
-const STREAM_FIXED_TTL = 3 * 60 * 60;
+import { DB_PATH, META_TTL_S, STREAM_FIXED_TTL_S, STREAM_SWR_S } from "./constants";
 
 // ─── Cache Toggle ──────────────────────────────────────────────
 let cacheEnabled = true;
@@ -114,6 +109,8 @@ const countExpiredStreams = db.prepare(`SELECT COUNT(*) as count FROM streams WH
 const deleteAllMeta = db.prepare(`DELETE FROM metadata`);
 const deleteAllStreams = db.prepare(`DELETE FROM streams`);
 const deleteStream = db.prepare(`DELETE FROM streams WHERE videoId = ?`);
+const purgeExpiredStmt = db.prepare(`DELETE FROM streams WHERE expiresAt <= ?`);
+const selectStreamStale = db.prepare(`SELECT * FROM streams WHERE videoId = ?`);
 
 // ─── Metadata Cache ───────────────────────────────────────────
 
@@ -129,7 +126,7 @@ export function getCachedMeta(videoId: string): CachedMeta | null {
 export function setCachedMeta(meta: Omit<CachedMeta, "createdAt" | "expiresAt">): void {
   if (!cacheEnabled) return;
   const now = Math.floor(Date.now() / 1000);
-  insertMeta.run(meta.videoId, meta.title, meta.channel, meta.duration, meta.durationFormatted, meta.thumbnail, meta.ytLink, now, now + META_TTL);
+  insertMeta.run(meta.videoId, meta.title, meta.channel, meta.duration, meta.durationFormatted, meta.thumbnail, meta.ytLink, now, now + META_TTL_S);
 }
 
 // ─── Stream URL Cache ─────────────────────────────────────────
@@ -143,10 +140,29 @@ export function getCachedStream(videoId: string): CachedStream | null {
   return null;
 }
 
-export function setCachedStream(videoId: string, streamUrl: string, _expiresAt: number): void {
+export function setCachedStream(videoId: string, streamUrl: string, expiresAt: number): void {
   if (!cacheEnabled) return;
   const now = Math.floor(Date.now() / 1000);
-  insertStream.run(videoId, streamUrl, now, now + STREAM_FIXED_TTL);
+  // Honor YouTube's own expire param, capped by our fixed TTL (whichever is sooner).
+  const safeExpiry = Math.min(
+    Number.isFinite(expiresAt) && expiresAt > now ? expiresAt : now + STREAM_FIXED_TTL_S,
+    now + STREAM_FIXED_TTL_S,
+  );
+  insertStream.run(videoId, streamUrl, now, safeExpiry);
+}
+
+/**
+ * Stale-while-revalidate: return expired-but-recent rows so callers can
+ * respond instantly and refresh in the background instead of blocking.
+ */
+export function getStaleStream(videoId: string): CachedStream | null {
+  if (!cacheEnabled) return null;
+  const row = selectStreamStale.get(videoId) as any;
+  if (!row) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (row.expiresAt > now) return row; // still fresh
+  if (now - row.expiresAt <= STREAM_SWR_S) return row; // stale but usable
+  return null;
 }
 
 export function parseExpiryFromUrl(url: string): number | null {
@@ -185,5 +201,5 @@ export function flushCache(): { metadata: number; streams: number } {
 }
 
 export function purgeExpiredStreams(): number {
-  return db.prepare(`DELETE FROM streams WHERE expiresAt <= ?`).run(Math.floor(Date.now() / 1000)).changes;
+  return purgeExpiredStmt.run(Math.floor(Date.now() / 1000)).changes as number;
 }

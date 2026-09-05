@@ -10,7 +10,6 @@ export function LineChart({ data, color = 'var(--accent)', height = 140 }: {
   const max = Math.max(...data) * 1.2 || 1;
   const divisor = Math.max(data.length - 1, 1);
   const pts = data.map((v, i) => `${(i / divisor) * w},${h - (v / max) * h}`).join(' ');
-  const area = `0,${h} ${pts} ${w},${h}`;
   const gradId = `lg-${color.replace(/[^a-z0-9]/gi, '')}`;
 
   return (

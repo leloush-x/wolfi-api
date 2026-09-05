@@ -1,32 +1,34 @@
-# React + TypeScript + Vite
+# Wolfie Dashboard (client)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite dashboard served by the Wolfie API itself (`dist/web`).
+See the **root `README.md`** for the full project docs.
 
-Currently, two official plugins are available:
+## Develop
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+# from repo root
+bun run dev:client     # HMR on :5173, proxies /info /saudio /admin → :3000
+bun run src/server.ts  # API in another terminal
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Structure
+
+```
+src/
+  App.tsx            tab shell (Dashboard / API Ground / Admin)
+  pages/             route views
+  components/        UI kit · Charts (dependency-free SVG) ·
+                     PackageManager · StarCanvas (twinkle + meteors)
+  hooks/             useApi (abortable fetch, pauses when tab hidden)
+                     useCopy (clipboard + fallback)
+  utils/             format (duration) · auth (admin token, sessionStorage)
+  index.css          design system (tokens → components → responsive)
+```
+
+## Notes
+
+- No chart library — `Charts.tsx` renders lightweight inline SVG.
+- Polling (`useAdmin`) stops when the tab is hidden and aborts in-flight
+  requests on unmount.
+- Canvas honors `prefers-reduced-motion` (single static frame, no loop).
+- `bun run build` (from root) emits to `../dist/web`; CI rebuilds it on push.

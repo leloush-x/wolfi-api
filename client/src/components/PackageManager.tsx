@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Package, Search, RefreshCw, ArrowUpCircle, Loader2, ChevronDown, AlertCircle, Check, X } from 'lucide-react';
+import { Package, Search, RefreshCw, ArrowUpCircle, Loader2, Check, X } from 'lucide-react';
 import { Card, CardTitle, Button, Input, Badge } from '../components/UI';
+import { authHeaders } from '../utils/auth';
 
 interface PkgInfo {
   name: string;
@@ -16,23 +17,33 @@ export default function PackageManager() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [expandedPkg, setExpandedPkg] = useState<string | null>(null);
-  const longPressTimer = useRef<Timer | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggered = useRef(false);
+  const mounted = useRef(true);
+
+  // Clear pending long-press timer on unmount (no stray setState).
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    };
+  }, []);
 
   const fetchPackages = async () => {
     setLoading(true);
     try {
       const res = await fetch('/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ action: 'list_packages' }),
       });
       const data = await res.json();
-      if (data.ok) setPackages(data.packages);
+      if (mounted.current && data.ok) setPackages(data.packages);
     } catch (e) {
       console.error('Failed to fetch packages:', e);
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   };
 
@@ -43,15 +54,17 @@ export default function PackageManager() {
     try {
       await fetch('/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ action: 'update_packages', packages: [pkgName] }),
       });
       await fetchPackages();
     } catch (e) {
       console.error('Update failed:', e);
     } finally {
-      setUpdating(null);
-      setExpandedPkg(null);
+      if (mounted.current) {
+        setUpdating(null);
+        setExpandedPkg(null);
+      }
     }
   };
 
@@ -60,14 +73,14 @@ export default function PackageManager() {
     try {
       await fetch('/admin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ action: 'update_packages' }),
       });
       await fetchPackages();
     } catch (e) {
       console.error('Update all failed:', e);
     } finally {
-      setUpdating(null);
+      if (mounted.current) setUpdating(null);
     }
   };
 
